@@ -1,0 +1,6 @@
+{
+  "version": 2,
+  "installCommand": "cd fatura_web && npm ci",
+  "buildCommand": "cd fatura_web && npm run build",
+  "outputDirectory": "fatura_web/.next"
+}
