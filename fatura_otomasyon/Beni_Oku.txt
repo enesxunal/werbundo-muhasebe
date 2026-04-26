@@ -1,0 +1,41 @@
+FATURA OTOMASYON - KURULUM / KULLANIM
+
+1) Kurulum
+- Terminali açın ve bu klasöre gelin.
+- Şu komutu çalıştırın:
+  pip install -r requirements.txt
+
+2) Mac için Tesseract kurulumu (zorunlu)
+- Homebrew yüklü olmalı.
+- Kurulum:
+  brew install tesseract tesseract-lang
+
+3) Mac için PDF OCR (opsiyonel ama önerilir)
+- PDF'leri görüntüye çevirmek için Poppler gerekir:
+  brew install poppler
+
+4) Ayar (zorunlu)
+- config.py dosyasını açın.
+- INPUT_FOLDER: Canon CaptureOnTouch'un dosya bırakacağı klasör
+- OUTPUT_BASE_FOLDER: Çıktı klasörü (Musteriler)
+- EXCEL_PATH: Excel kayıt dosyası (Gelir_Gider.xlsx)
+
+5) Çalıştırma
+- En kolay yöntem (Mac):
+  - Önce: Kurulum_Mac.command dosyasına çift tıklayın
+  - Sonra: Baslat.command dosyasına çift tıklayın
+  (Terminal otomatik açılır.)
++
+- Terminal ile çalıştırmak isterseniz:
+  python3 main.py
+
+6) Kullanım
+- Faturayı INPUT_FOLDER (varsayılan: Giris) klasörüne bırakın.
+- Sistem OCR yapar, müşteri + tarih bilgisine göre klasörler:
+  Musteriler/Musteri_Adi/Yil-Ay/
+- Excel'e satır ekler: Tarih, Müşteri Adı, Dosya Yolu
+
+Notlar
+- Müşteri adı okunamazsa: Bilinmeyen_Musteri
+- Tarih okunamazsa: Tarih_Bilinmiyor
+- Regex yakalama için gerekirse config.py içindeki CUSTOMER_REGEXES / DATE_REGEXES düzenlenebilir.
