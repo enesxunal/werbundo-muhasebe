@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClientSafe, getSupabasePublicEnv } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n/LocaleContext";
 import { dictionaries, translate, type Locale } from "@/lib/i18n/dictionaries";
+import { DashboardAssistant } from "@/components/DashboardAssistant";
 
 type MonthBucket = {
   key: string; // YYYY-MM
@@ -244,6 +245,8 @@ export default function DashboardPage() {
           </a>
         ) : null}
       </div>
+
+      {env.ok && email ? <DashboardAssistant locale={locale} /> : null}
 
       <div className="mt-8 grid gap-4 md:grid-cols-3">
         <div className="rounded-2xl border border-[var(--app-border)] bg-white p-5">
