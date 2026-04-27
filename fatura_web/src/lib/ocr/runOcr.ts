@@ -6,13 +6,14 @@ export type OcrProgress = { status: string; progress: number };
 const OCR_TIMEOUT_MS = 240_000;
 const OCR_MAX_WIDTH = 1800;
 
-function tesseractStatusTr(status: string): string {
+/** i18n anahtarı — InvoiceJobBanner / yükleme ekranı `t()` ile çevirir */
+export function ocrStatusToI18nKey(status: string): string {
   const s = status.toLowerCase();
-  if (s.includes("recognizing")) return "Metin okunuyor (OCR)";
-  if (s.includes("loading") && s.includes("language")) return "Dil paketi yükleniyor";
-  if (s.includes("loading") && s.includes("tesseract")) return "OCR motoru yükleniyor";
-  if (s.includes("initializing")) return "OCR başlatılıyor";
-  return status;
+  if (s.includes("recognizing")) return "job.ocr.recognizing";
+  if (s.includes("loading") && s.includes("language")) return "job.ocr.langPack";
+  if (s.includes("loading") && s.includes("tesseract")) return "job.ocr.engine";
+  if (s.includes("initializing")) return "job.ocr.init";
+  return "job.ocr.working";
 }
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -76,7 +77,7 @@ export async function runInvoiceOcr(args: {
       if (!onProgress) return;
       const raw = typeof m.progress === "number" ? m.progress : 0;
       const p = raw > 1 ? Math.min(1, raw / 100) : Math.min(1, Math.max(0, raw));
-      onProgress({ status: tesseractStatusTr(String(m.status ?? "working")), progress: p });
+      onProgress({ status: ocrStatusToI18nKey(String(m.status ?? "working")), progress: p });
     },
   });
 

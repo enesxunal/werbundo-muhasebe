@@ -13,6 +13,7 @@ import {
   setInvoiceJob,
   subscribe,
 } from "@/lib/jobs/invoiceUploadJobStore";
+import { useI18n } from "@/lib/i18n/LocaleContext";
 
 type ExtractedItem = {
   lineNo?: number;
@@ -55,6 +56,7 @@ type AiExtract = {
 
 export default function UploadPage() {
   const supabase = useMemo(() => createSupabaseBrowserClientSafe(), []);
+  const { t } = useI18n();
 
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -112,21 +114,25 @@ export default function UploadPage() {
     const w: string[] = [];
     const s = next.subtotal;
     const v = next.vatTotal;
-    const t = next.total;
-    if (typeof s === "number" && typeof v === "number" && typeof t === "number") {
-      const diff = Math.abs((s + v) - t);
-      if (diff > 0.02) w.push(`Toplam kontrolü: AraToplam + KDV = ${(s + v).toFixed(2)} ama Toplam = ${t.toFixed(2)}`);
+    const tot = next.total;
+    if (typeof s === "number" && typeof v === "number" && typeof tot === "number") {
+      const diff = Math.abs((s + v) - tot);
+      if (diff > 0.02)
+        w.push(
+          t("upload.warnTotalMismatch").replace("{a}", (s + v).toFixed(2)).replace("{b}", tot.toFixed(2)),
+        );
     }
-    if (!next.customerName.trim()) w.push("Tedarikçi (faturayı kesen firma) adı boş görünüyor.");
-    if (!next.issueDate) w.push("Tarih boş görünüyor.");
+    if (!next.customerName.trim()) w.push(t("upload.warnSupplierEmpty"));
+    if (!next.issueDate) w.push(t("upload.warnDateEmpty"));
     if (next.items && next.items.length > 0) {
       const sum = next.items
         .map((i) => i.lineTotal)
         .filter((n): n is number => typeof n === "number")
         .reduce((a, b) => a + b, 0);
-      if (typeof t === "number" && sum > 0) {
-        const diff = Math.abs(sum - t);
-        if (diff > 0.5) w.push(`Kalem toplamı ≈ ${sum.toFixed(2)} fakat Toplam = ${t.toFixed(2)} (fark olabilir)`);
+      if (typeof tot === "number" && sum > 0) {
+        const diff = Math.abs(sum - tot);
+        if (diff > 0.5)
+          w.push(t("upload.warnLinesVsTotal").replace("{sum}", sum.toFixed(2)).replace("{total}", tot.toFixed(2)));
       }
     }
     return w;
@@ -147,7 +153,7 @@ export default function UploadPage() {
         items,
       }),
     );
-  }, [reviewOpen, customerName, issueDate, subtotal, vatTotal, total, items]);
+  }, [reviewOpen, customerName, issueDate, subtotal, vatTotal, total, items, t]);
 
   async function callExtractInvoice(
     text: string,
@@ -164,11 +170,11 @@ export default function UploadPage() {
       });
       const json = await resp.json();
       if (!resp.ok || !json?.ok) {
-        return { ok: false, error: String(json?.error ?? "AI çıkarımı çalışmadı (OCR ile devam).") };
+        return { ok: false, error: String(json?.error ?? t("upload.aiExtractFail")) };
       }
       return { ok: true, data: json.data as AiExtract };
     } catch {
-      return { ok: false, error: "AI çıkarımı çalışmadı (OCR ile devam)." };
+      return { ok: false, error: t("upload.aiExtractFail") };
     }
   }
 
@@ -303,15 +309,15 @@ export default function UploadPage() {
     setMessage(null);
     setReviewOpen(false);
     if (!supabase) {
-      setError("Supabase ayarları eksik.");
+      setError(t("dashboard.envMissing"));
       return;
     }
     if (!file) {
-      setError("Lütfen bir fatura fotoğrafı seç.");
+      setError(t("upload.selectFile"));
       return;
     }
     if (getSnapshot()?.status === "running") {
-      setError("Şu an başka bir fatura işleniyor; bitene kadar bekle veya alttaki durumu izle.");
+      setError(t("upload.busyOther"));
       return;
     }
 
@@ -331,9 +337,9 @@ export default function UploadPage() {
     };
 
     if (aliveRef.current) {
-      setProgress({ status: "Başlıyor", progress: 0 });
+      setProgress({ status: t("job.step.start"), progress: 0 });
     }
-    updateJobRunning("Başlıyor", 0);
+    updateJobRunning("job.step.start", 0);
 
     void (async () => {
       try {
@@ -381,9 +387,9 @@ export default function UploadPage() {
         let ocrTextForApi = "";
         let ocrDraft = emptyBaseDraft;
 
-        updateJobRunning("Görüntü hazırlanıyor", 0.08);
+        updateJobRunning("job.step.prepare", 0.08);
         if (aliveRef.current) {
-          setProgress({ status: "Görüntü hazırlanıyor", progress: 0.08 });
+          setProgress({ status: t("job.step.prepare"), progress: 0.08 });
         }
         const visionPayload = await prepareInvoiceImageForVision(currentFile);
 
@@ -393,15 +399,19 @@ export default function UploadPage() {
           if (aliveRef.current) setOcrText("");
         } else {
           hadTesseractOcr = true;
-          updateJobRunning("Metin çıkarılıyor (AI için)", 0.12);
+          updateJobRunning("job.step.ocr", 0.12);
           if (aliveRef.current) {
-            setProgress({ status: "Metin çıkarılıyor (AI için)", progress: 0.12 });
+            setProgress({ status: t("job.step.ocr"), progress: 0.12 });
           }
           const { extracted, text } = await runInvoiceOcr({
             file: currentFile,
             onProgress: (p) => {
               updateJobRunning(p.status, Math.min(0.45, 0.12 + (p.progress ?? 0) * 0.35));
-              if (aliveRef.current) setProgress(p);
+              if (aliveRef.current)
+                setProgress({
+                  status: p.status.startsWith("job.") ? t(p.status) : p.status,
+                  progress: Math.min(0.45, 0.12 + (p.progress ?? 0) * 0.35),
+                });
             },
           });
           ocrTextForApi = text;
@@ -410,9 +420,9 @@ export default function UploadPage() {
           const cName = extracted.customerName?.trim() ?? "";
           const iDate = extracted.issueDateISO ?? new Date().toISOString().slice(0, 10);
           const cur = (extracted.currency ?? "EUR") as "TRY" | "USD" | "EUR";
-          const t = typeof extracted.total === "number" ? extracted.total : undefined;
+          const totalEx = typeof extracted.total === "number" ? extracted.total : undefined;
           const v = typeof extracted.vatTotal === "number" ? extracted.vatTotal : undefined;
-          const s = typeof t === "number" && typeof v === "number" ? Math.max(0, t - v) : undefined;
+          const s = typeof totalEx === "number" && typeof v === "number" ? Math.max(0, totalEx - v) : undefined;
           const ocrItems = (extracted.items ?? []) as ExtractedItem[];
           ocrDraft = {
             customerName: cName,
@@ -426,7 +436,7 @@ export default function UploadPage() {
             currency: cur,
             subtotal: typeof s === "number" ? s.toFixed(2) : "",
             vatTotal: typeof v === "number" ? v.toFixed(2) : "",
-            total: typeof t === "number" ? t.toFixed(2) : "",
+            total: typeof totalEx === "number" ? totalEx.toFixed(2) : "",
             items: ocrItems,
             confidence: null as number | null,
           };
@@ -448,9 +458,9 @@ export default function UploadPage() {
           }
         }
 
-        updateJobRunning("AI faturayı okuyor", 0.55);
+        updateJobRunning("job.step.ai", 0.55);
         if (aliveRef.current) {
-          setProgress({ status: "AI faturayı okuyor", progress: 0.55 });
+          setProgress({ status: t("job.step.ai"), progress: 0.55 });
           setAiNote(null);
           setAiConfidence(null);
           setAiApplied(false);
@@ -482,14 +492,14 @@ export default function UploadPage() {
             setItems(merged.items);
             setAiConfidence(typeof merged.confidence === "number" ? merged.confidence : null);
             const visionHint = visionPayload
-              ? "Alanlar çoğunlukla yapay zekâ + fatura görselinden dolduruldu (klasik OCR devre dışı)."
+              ? t("upload.aiNoteVision")
               : currentFile.type.toLowerCase().includes("heic") || currentFile.type.toLowerCase().includes("heif")
-                ? "Görüntü bu tarayıcıda küçültülemedi; AI yalnızca çıkarılan metne baktı. Daha iyi sonuç için JPG/PNG yükleyin."
-                : "Görüntü hazırlanamadı; AI yalnızca çıkarılan metne baktı.";
+                ? t("upload.aiNoteHeic")
+                : t("upload.aiNoteNoImg");
             setAiNote(
               typeof merged.confidence === "number"
-                ? `${visionHint} Tahmini güven: %${Math.round(merged.confidence)}.`
-                : `${visionHint}`,
+                ? `${visionHint} ${t("upload.aiConfidenceSuffix").replace("{n}", String(Math.round(merged.confidence)))}`
+                : visionHint,
             );
           }
         } else {
@@ -497,7 +507,7 @@ export default function UploadPage() {
           if (visionPayload && !hadTesseractOcr) {
             const errMsg =
               aiRes.error.includes("OPENAI_API_KEY") || aiRes.error.includes("GEMINI_API_KEY")
-                ? "AI kapalı (sunucuda OPENAI_API_KEY veya GEMINI_API_KEY yok). Fatura okumak için bu anahtarlardan birini ekleyin."
+                ? t("upload.aiKeyMissingShort")
                 : aiRes.error;
             setInvoiceJob({
               status: "error",
@@ -521,7 +531,7 @@ export default function UploadPage() {
             setAiConfidence(null);
             setAiNote(
               aiRes.error.includes("OPENAI_API_KEY") || aiRes.error.includes("GEMINI_API_KEY")
-                ? "AI kapalı görünüyor (sunucuda OPENAI_API_KEY veya GEMINI_API_KEY yok). Şimdilik yalnızca otomatik metin çıkarımıyla doldurduk; anahtarlardan birini ekleyince yapay zekâ da çalışır."
+                ? t("upload.aiKeyMissingLong")
                 : aiRes.error,
             );
           }
@@ -543,9 +553,9 @@ export default function UploadPage() {
           );
         }
 
-        updateJobRunning("Kaydediliyor", 0.95);
+        updateJobRunning("job.step.save", 0.95);
         if (aliveRef.current) {
-          setProgress({ status: "Kaydediliyor", progress: 0.95 });
+          setProgress({ status: t("job.step.save"), progress: 0.95 });
         }
         try {
           const { invoiceId } = await persistUploadDraft({
@@ -558,7 +568,7 @@ export default function UploadPage() {
           });
           setInvoiceJob({
             status: "ok",
-            message: "Fatura kaydedildi.",
+            message: t("upload.doneLine"),
             finishedAt: Date.now(),
             fileName: currentFile.name,
             invoiceId,
@@ -568,15 +578,15 @@ export default function UploadPage() {
             startedAt,
             finishedAt: Date.now(),
             status: "ok",
-            detail: "Kayıt tamamlandı",
+            detail: t("upload.historyOk"),
             invoiceId,
           });
           if (aliveRef.current) {
             setReviewOpen(false);
             setError(null);
-            setMessage("Fatura kaydedildi.");
+            setMessage(t("upload.doneLine"));
             setFile(null);
-            setProgress({ status: "Tamamlandı", progress: 1 });
+            setProgress({ status: t("upload.progressDone"), progress: 1 });
           }
         } catch (persistErr: unknown) {
           if (persistErr instanceof DuplicateInvoiceError) {
@@ -597,14 +607,14 @@ export default function UploadPage() {
             });
             if (aliveRef.current) {
               setError(null);
-              setMessage("Bu fatura daha önce yüklenmiş.");
+              setMessage(t("upload.dupLine"));
               setReviewOpen(false);
               setFile(null);
               setProgress(null);
             }
             return;
           }
-          const pe = persistErr instanceof Error ? persistErr.message : "Kaydedilemedi.";
+          const pe = persistErr instanceof Error ? persistErr.message : t("upload.saveFailed");
           setInvoiceJob({
             status: "error",
             error: pe,
@@ -627,7 +637,7 @@ export default function UploadPage() {
         }
         if (aliveRef.current) setProgress(null);
       } catch (err: any) {
-        const msg = err?.message ?? "İşlenemedi.";
+        const msg = err?.message ?? t("upload.processFailed");
         setInvoiceJob({
           status: "error",
           error: msg,
@@ -647,11 +657,11 @@ export default function UploadPage() {
     setMessage(null);
     if (!supabase) return;
     if (!file) {
-      setError("Dosya kayboldu. Tekrar seç.");
+      setError(t("upload.fileLost"));
       return;
     }
     setBusy(true);
-    setProgress({ status: "Kaydediliyor", progress: 0.8 });
+    setProgress({ status: t("upload.progressSaving"), progress: 0.8 });
     try {
       const { data: userData, error: userErr } = await supabase.auth.getUser();
       if (userErr) throw userErr;
@@ -675,19 +685,19 @@ export default function UploadPage() {
         startedAt: Date.now(),
         finishedAt: Date.now(),
         status: "ok",
-        detail: "Manuel onaylı kayıt",
+        detail: t("upload.historyManual"),
         invoiceId,
       });
       setInvoiceJob({
         status: "ok",
-        message: "Fatura kaydedildi.",
+        message: t("upload.doneLine"),
         finishedAt: Date.now(),
         fileName: file.name,
         invoiceId,
       });
 
-      setProgress({ status: "Tamamlandı", progress: 1 });
-      setMessage("Fatura kaydedildi.");
+      setProgress({ status: t("upload.progressDone"), progress: 1 });
+      setMessage(t("upload.doneLine"));
       setFile(null);
       setReviewOpen(false);
     } catch (err: unknown) {
@@ -707,10 +717,10 @@ export default function UploadPage() {
           fileName: file.name,
           existingInvoiceId: err.existingInvoiceId,
         });
-        setMessage("Bu fatura daha önce yüklenmiş.");
+        setMessage(t("upload.dupLine"));
         setProgress(null);
       } else {
-        setError(err instanceof Error ? err.message : "Kaydedilemedi.");
+        setError(err instanceof Error ? err.message : t("upload.saveFailed"));
         setProgress(null);
       }
     } finally {
@@ -722,31 +732,29 @@ export default function UploadPage() {
     <div>
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[var(--app-navy)]">Fatura yükle</h1>
-          <p className="mt-2 text-sm text-zinc-600">
-            Görsel yükleyin; OCR ve (varsa) yapay zekâ ile okuma yapılır ve kayıt oluşturulur. Tedarikçi (faturayı kesen firma) sistemde varsa aynı kayda eklenir; yoksa yeni tedarikçi açılır. Hata olursa alanları düzeltip kaydedebilirsiniz.
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--app-navy)]">{t("upload.title")}</h1>
+          <p className="mt-2 text-sm text-zinc-600">{t("upload.intro")}</p>
         </div>
         <div className="flex gap-2">
-          <a className="rounded-xl border bg-white px-4 py-2 text-sm" href="/app/invoices">
-            Faturalar
+          <a className="rounded-xl border border-[var(--app-border)] bg-white px-4 py-2 text-sm" href="/app/invoices">
+            {t("nav.invoices")}
           </a>
           <a className="rounded-xl border border-[var(--app-border)] bg-white px-4 py-2 text-sm" href="/app/customers">
-            Tedarikçiler
+            {t("nav.suppliers")}
           </a>
         </div>
       </div>
 
-      <div className="mt-6 grid gap-4 rounded-2xl border bg-white p-6">
+      <div className="mt-6 grid gap-4 rounded-2xl border border-[var(--app-border)] bg-white p-6">
         <div>
-          <label className="text-sm font-medium">Fatura Fotoğrafı</label>
+          <label className="text-sm font-medium">{t("upload.fileLabel")}</label>
           <input
             className="mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring"
             type="file"
             accept="image/*,.png,.jpg,.jpeg,.webp,.heic,.heif"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
-          <p className="mt-1 text-xs text-zinc-500">En iyi sonuç: net, kırpılmış, iyi ışıklı JPG/PNG.</p>
+          <p className="mt-1 text-xs text-zinc-500">{t("upload.fileHint")}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -754,9 +762,9 @@ export default function UploadPage() {
             type="button"
             onClick={process}
             disabled={!file || busy || backgroundRunning}
-            className="rounded-xl bg-black px-5 py-2 text-sm text-white disabled:opacity-50"
+            className="rounded-xl bg-[var(--app-navy)] px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
-            {busy || backgroundRunning ? "İşleniyor..." : "Yükle ve kaydet"}
+            {busy || backgroundRunning ? t("upload.processing") : t("upload.btn")}
           </button>
           {progress ? (
             <span className="text-sm text-zinc-600">
@@ -772,31 +780,29 @@ export default function UploadPage() {
           <div className="mt-2 grid gap-4 rounded-2xl border bg-zinc-50 p-4">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-medium">Kayıt hatası — düzelt ve kaydet</p>
-                <p className="mt-1 text-xs text-zinc-600">
-                  Otomatik kayıt başarısız olduysa düzeltip Kaydet&apos;e basın. Tedarikçi adı mevcut kayıtla eşleşiyorsa fatura o firmaya bağlanır.
-                </p>
+                <p className="text-sm font-medium">{t("upload.reviewTitle")}</p>
+                <p className="mt-1 text-xs text-zinc-600">{t("upload.reviewHint")}</p>
               </div>
               <button
                 type="button"
                 onClick={saveApproved}
                 disabled={busy}
-                className="rounded-xl bg-black px-4 py-2 text-sm text-white disabled:opacity-50"
+                className="rounded-xl bg-[var(--app-navy)] px-4 py-2 text-sm text-white disabled:opacity-50"
               >
-                Kaydet
+                {t("upload.save")}
               </button>
             </div>
 
             {aiNote ? (
               <div className="rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-800">
-                <div className="font-medium">Bilgi</div>
+                <div className="font-medium">{t("upload.info")}</div>
                 <p className="mt-2">{aiNote}</p>
               </div>
             ) : null}
 
             {warnings.length ? (
               <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                <div className="font-medium">Uyarılar</div>
+                <div className="font-medium">{t("upload.warnings")}</div>
                 <ul className="mt-2 list-disc pl-5">
                   {warnings.map((w) => (
                     <li key={w}>{w}</li>
@@ -807,7 +813,7 @@ export default function UploadPage() {
 
             <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <label className="text-sm font-medium">Tedarikçi (Rechnungsaussteller)</label>
+                <label className="text-sm font-medium">{t("upload.supplier")}</label>
                 <input
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   value={customerName}
@@ -815,16 +821,16 @@ export default function UploadPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Fatura No</label>
+                <label className="text-sm font-medium">{t("upload.invoiceNo")}</label>
                 <input
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   value={invoiceNo}
                   onChange={(e) => setInvoiceNo(e.target.value)}
-                  placeholder="Varsa"
+                  placeholder={t("upload.optional")}
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Tarih</label>
+                <label className="text-sm font-medium">{t("upload.date")}</label>
                 <input
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   type="date"
@@ -833,16 +839,16 @@ export default function UploadPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">USt-IdNr / vergi no</label>
+                <label className="text-sm font-medium">{t("upload.ustId")}</label>
                 <input
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   value={customerTaxNo}
                   onChange={(e) => setCustomerTaxNo(e.target.value)}
-                  placeholder="Varsa"
+                  placeholder={t("upload.optional")}
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Email</label>
+                <label className="text-sm font-medium">{t("upload.email")}</label>
                 <input
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   value={customerEmail}
@@ -850,7 +856,7 @@ export default function UploadPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Telefon</label>
+                <label className="text-sm font-medium">{t("upload.phone")}</label>
                 <input
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   value={customerPhone}
@@ -858,16 +864,16 @@ export default function UploadPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Steuernummer</label>
+                <label className="text-sm font-medium">{t("upload.steuer")}</label>
                 <input
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   value={customerTaxOffice}
                   onChange={(e) => setCustomerTaxOffice(e.target.value)}
-                  placeholder="Varsa"
+                  placeholder={t("upload.optional")}
                 />
               </div>
               <div className="md:col-span-2">
-                <label className="text-sm font-medium">Adres</label>
+                <label className="text-sm font-medium">{t("upload.address")}</label>
                 <input
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   value={customerAddress}
@@ -878,7 +884,7 @@ export default function UploadPage() {
 
             <div className="grid gap-3 md:grid-cols-4">
               <div>
-                <label className="text-sm font-medium">Para Birimi</label>
+                <label className="text-sm font-medium">{t("upload.currency")}</label>
                 <select
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   value={currency}
@@ -890,7 +896,7 @@ export default function UploadPage() {
                 </select>
               </div>
               <div>
-                <label className="text-sm font-medium">Ara Toplam</label>
+                <label className="text-sm font-medium">{t("upload.subtotal")}</label>
                 <input
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   value={subtotal}
@@ -898,7 +904,7 @@ export default function UploadPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">KDV</label>
+                <label className="text-sm font-medium">{t("upload.vat")}</label>
                 <input
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   value={vatTotal}
@@ -906,7 +912,7 @@ export default function UploadPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Toplam</label>
+                <label className="text-sm font-medium">{t("upload.total")}</label>
                 <input
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   value={total}
@@ -916,19 +922,19 @@ export default function UploadPage() {
             </div>
 
             <div className="rounded-2xl border bg-white overflow-x-auto">
-              <div className="border-b px-4 py-2 text-sm font-medium">Kalemler</div>
+              <div className="border-b px-4 py-2 text-sm font-medium">{t("upload.linesTitle")}</div>
               <div className="min-w-[760px] divide-y">
                 {items.length === 0 ? (
-                  <div className="px-4 py-3 text-sm text-zinc-600">Kalem bulunamadı (isteğe bağlı).</div>
+                  <div className="px-4 py-3 text-sm text-zinc-600">{t("upload.noLines")}</div>
                 ) : (
                   <>
                     <div className="grid grid-cols-12 gap-2 bg-zinc-50 px-4 py-2 text-[11px] font-medium text-zinc-600">
-                      <div className="col-span-1">Pos.</div>
-                      <div className="col-span-3">Bezeichnung</div>
-                      <div className="col-span-1 text-right">Menge</div>
-                      <div className="col-span-1">Einh.</div>
-                      <div className="col-span-2 text-right">Einzel</div>
-                      <div className="col-span-2 text-right">Gesamt</div>
+                      <div className="col-span-1">{t("upload.colPos")}</div>
+                      <div className="col-span-3">{t("upload.colDesc")}</div>
+                      <div className="col-span-1 text-right">{t("upload.colQty")}</div>
+                      <div className="col-span-1">{t("upload.colUnit")}</div>
+                      <div className="col-span-2 text-right">{t("upload.colUnitPrice")}</div>
+                      <div className="col-span-2 text-right">{t("upload.colLineTotal")}</div>
                       <div className="col-span-2 text-right"> </div>
                     </div>
                     {items.map((it, idx) => (
@@ -954,7 +960,7 @@ export default function UploadPage() {
                               next[idx] = { ...it, description: e.target.value };
                               setItems(next);
                             }}
-                            placeholder="Ürün / Hizmet"
+                            placeholder={t("upload.phProduct")}
                           />
                         </div>
                         <div className="col-span-1">
@@ -967,7 +973,7 @@ export default function UploadPage() {
                               next[idx] = { ...it, quantity: n };
                               setItems(next);
                             }}
-                            placeholder="Adet"
+                            placeholder={t("upload.phQty")}
                           />
                         </div>
                         <div className="col-span-1">
@@ -1014,7 +1020,7 @@ export default function UploadPage() {
                             className="rounded-xl border px-3 py-2 text-sm hover:bg-zinc-50"
                             onClick={() => setItems(items.filter((_, i) => i !== idx))}
                           >
-                            Sil
+                            {t("upload.del")}
                           </button>
                         </div>
                       </div>
@@ -1028,21 +1034,27 @@ export default function UploadPage() {
                   className="rounded-xl border bg-white px-4 py-2 text-sm hover:bg-zinc-50"
                   onClick={() => setItems([...items, { description: "" }])}
                 >
-                  + Kalem ekle
+                  {t("upload.addLine")}
                 </button>
               </div>
             </div>
 
             <details className="rounded-2xl border bg-white p-4">
-              <summary className="cursor-pointer text-sm font-medium">OCR metni (hata ayıklama)</summary>
+              <summary className="cursor-pointer text-sm font-medium">{t("upload.ocrDebug")}</summary>
               <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap text-xs text-zinc-700">{ocrText}</pre>
             </details>
           </div>
         ) : null}
 
         <div className="rounded-xl border bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
-          İstersen sonra tabloları açıp bakarsın: <a className="underline" href="/app/invoices">Faturalar</a> ·{" "}
-          <a className="underline" href="/app/customers">Tedarikçiler</a>
+          {t("upload.footerLinksHtml")}{" "}
+          <a className="underline" href="/app/invoices">
+            {t("nav.invoices")}
+          </a>{" "}
+          ·{" "}
+          <a className="underline" href="/app/customers">
+            {t("nav.suppliers")}
+          </a>
         </div>
       </div>
     </div>

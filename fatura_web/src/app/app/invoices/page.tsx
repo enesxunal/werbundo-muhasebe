@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 import { getSignedDocumentUrl } from "@/lib/upload/documents";
+import { useI18n } from "@/lib/i18n/LocaleContext";
 
 type InvoiceRow = {
   id: string;
@@ -23,10 +24,12 @@ function monthKey(isoDate: string): string {
 }
 
 export default function InvoicesListPage() {
+  const { t, locale } = useI18n();
   const supabase = useMemo(() => createSupabaseBrowserClientSafe(), []);
   const [rows, setRows] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const [monthFilter, setMonthFilter] = useState<string>("");
   const [sortKey, setSortKey] = useState<"issue_date" | "created_at" | "total">("issue_date");
@@ -34,18 +37,20 @@ export default function InvoicesListPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
+  const dateLoc = locale === "de" ? "de-DE" : "tr-TR";
+
   async function load() {
     setError(null);
     setLoading(true);
     try {
-      if (!supabase) throw new Error("Supabase ayarları eksik. `.env.local` dosyasını doldurun.");
+      if (!supabase) throw new Error(t("dashboard.envMissing"));
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) {
         window.location.href = "/login";
         return;
       }
 
-      const { data, error } = await supabase
+      const { data, error: qErr } = await supabase
         .from("invoices")
         .select(
           `
@@ -56,10 +61,10 @@ export default function InvoicesListPage() {
         )
         .order("issue_date", { ascending: false });
 
-      if (error) throw error;
+      if (qErr) throw qErr;
       setRows((data ?? []) as unknown as InvoiceRow[]);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Faturalar yüklenemedi.");
+      setError(err instanceof Error ? err.message : t("common.error"));
     } finally {
       setLoading(false);
     }
@@ -124,7 +129,26 @@ export default function InvoicesListPage() {
       });
       window.open(signedUrl, "_blank", "noopener,noreferrer");
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Dosya açılamadı.");
+      alert(err instanceof Error ? err.message : t("common.error"));
+    }
+  }
+
+  async function removeInvoice(id: string) {
+    if (!supabase) return;
+    if (!window.confirm(t("invoices.deleteConfirm"))) return;
+    setDeletingId(id);
+    setError(null);
+    try {
+      const { data: u } = await supabase.auth.getUser();
+      const uid = u.user?.id;
+      if (!uid) return;
+      const { error: delErr } = await supabase.from("invoices").delete().eq("id", id).eq("user_id", uid);
+      if (delErr) throw delErr;
+      await load();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : t("invoices.deleteErr"));
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -132,14 +156,14 @@ export default function InvoicesListPage() {
     <div>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[var(--app-navy)]">Faturalar</h1>
-          <p className="mt-2 text-sm text-zinc-600">Tüm gelen faturalar; tarih ve tutara göre süzebilirsin.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--app-navy)]">{t("invoices.title")}</h1>
+          <p className="mt-2 text-sm text-zinc-600">{t("invoices.subtitle")}</p>
         </div>
         <a
           className="rounded-xl bg-[var(--app-navy)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--app-navy-muted)]"
           href="/app/invoices/new"
         >
-          + Manuel ekle
+          {t("invoices.addManual")}
         </a>
       </div>
 
@@ -147,13 +171,13 @@ export default function InvoicesListPage() {
 
       <div className="mt-6 grid gap-3 rounded-2xl border border-[var(--app-border)] bg-white p-4 md:grid-cols-2 lg:grid-cols-4">
         <div>
-          <label className="text-xs font-medium text-zinc-600">Fatura ayı</label>
+          <label className="text-xs font-medium text-zinc-600">{t("invoices.filterMonth")}</label>
           <select
             className="mt-1 w-full rounded-xl border border-[var(--app-border)] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--app-navy)]"
             value={monthFilter}
             onChange={(e) => setMonthFilter(e.target.value)}
           >
-            <option value="">Tümü</option>
+            <option value="">{t("invoices.all")}</option>
             {monthOptions.map((m) => (
               <option key={m} value={m}>
                 {m}
@@ -162,7 +186,7 @@ export default function InvoicesListPage() {
           </select>
         </div>
         <div>
-          <label className="text-xs font-medium text-zinc-600">Sırala</label>
+          <label className="text-xs font-medium text-zinc-600">{t("invoices.sort")}</label>
           <select
             className="mt-1 w-full rounded-xl border border-[var(--app-border)] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--app-navy)]"
             value={`${sortKey}:${sortDir}`}
@@ -172,16 +196,16 @@ export default function InvoicesListPage() {
               setSortDir(d);
             }}
           >
-            <option value="issue_date:desc">Fatura tarihi (yeni)</option>
-            <option value="issue_date:asc">Fatura tarihi (eski)</option>
-            <option value="created_at:desc">Yükleme zamanı (yeni)</option>
-            <option value="created_at:asc">Yükleme zamanı (eski)</option>
-            <option value="total:desc">Tutar (yüksek)</option>
-            <option value="total:asc">Tutar (düşük)</option>
+            <option value="issue_date:desc">{t("invoices.sortIssueDesc")}</option>
+            <option value="issue_date:asc">{t("invoices.sortIssueAsc")}</option>
+            <option value="created_at:desc">{t("invoices.sortCreatedDesc")}</option>
+            <option value="created_at:asc">{t("invoices.sortCreatedAsc")}</option>
+            <option value="total:desc">{t("invoices.sortTotalDesc")}</option>
+            <option value="total:asc">{t("invoices.sortTotalAsc")}</option>
           </select>
         </div>
         <div>
-          <label className="text-xs font-medium text-zinc-600">Başlangıç (fatura tarihi)</label>
+          <label className="text-xs font-medium text-zinc-600">{t("invoices.dateFrom")}</label>
           <input
             type="date"
             className="mt-1 w-full rounded-xl border border-[var(--app-border)] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--app-navy)]"
@@ -190,7 +214,7 @@ export default function InvoicesListPage() {
           />
         </div>
         <div>
-          <label className="text-xs font-medium text-zinc-600">Bitiş (fatura tarihi)</label>
+          <label className="text-xs font-medium text-zinc-600">{t("invoices.dateTo")}</label>
           <input
             type="date"
             className="mt-1 w-full rounded-xl border border-[var(--app-border)] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--app-navy)]"
@@ -202,26 +226,27 @@ export default function InvoicesListPage() {
 
       <div className="mt-6 rounded-2xl border border-[var(--app-border)] bg-white">
         <div className="border-b border-[var(--app-border)] px-5 py-3 text-sm font-medium">
-          Liste ({filtered.length}
+          {t("invoices.list")} ({filtered.length}
           {filtered.length !== rows.length ? ` / ${rows.length}` : ""})
         </div>
         <div className="divide-y divide-[var(--app-border)]">
           {loading ? (
-            <div className="px-5 py-4 text-sm text-zinc-600">Yükleniyor...</div>
+            <div className="px-5 py-4 text-sm text-zinc-600">{t("invoices.loading")}</div>
           ) : filtered.length === 0 ? (
-            <div className="px-5 py-4 text-sm text-zinc-600">Kayıt yok veya filtreye uymuyor.</div>
+            <div className="px-5 py-4 text-sm text-zinc-600">{t("invoices.empty")}</div>
           ) : (
             filtered.map((r) => (
               <div key={r.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <div className="font-medium text-zinc-900">
-                    {r.customer?.name ?? "Tedarikçi"} · {new Date(r.issue_date).toLocaleDateString("de-DE")}
+                    {r.customer?.name ?? t("invoices.supplier")} ·{" "}
+                    {new Date(r.issue_date).toLocaleDateString(dateLoc)}
                   </div>
                   <div className="mt-1 text-xs text-zinc-500">
-                    {r.invoice_no ? `No: ${r.invoice_no}` : "No: —"}
-                    {r.vat_total != null ? ` · USt/KDV: ${r.vat_total} ${r.currency}` : ""}
+                    {r.invoice_no ? `${t("upload.invoiceNo")}: ${r.invoice_no}` : t("invoices.noNum")}
+                    {r.vat_total != null ? ` · ${t("upload.vat")}: ${r.vat_total} ${r.currency}` : ""}
                     <span className="ml-2 text-zinc-400">
-                      Yükleme: {new Date(r.created_at).toLocaleString("de-DE")}
+                      {t("invoices.uploaded")}: {new Date(r.created_at).toLocaleString(dateLoc)}
                     </span>
                   </div>
                   {r.notes ? <div className="mt-2 text-sm text-zinc-700">{r.notes}</div> : null}
@@ -236,7 +261,7 @@ export default function InvoicesListPage() {
                       className="rounded-lg border border-[var(--app-border)] bg-white px-3 py-1 text-xs hover:bg-slate-50"
                       href={`/app/invoices/${r.id}`}
                     >
-                      Düzenle
+                      {t("invoices.edit")}
                     </a>
                     {r.document ? (
                       <button
@@ -244,11 +269,19 @@ export default function InvoicesListPage() {
                         onClick={() => openDocument(r)}
                         type="button"
                       >
-                        Görsel
+                        {t("invoices.image")}
                       </button>
                     ) : (
-                      <span className="text-xs text-zinc-400">Dosya yok</span>
+                      <span className="text-xs text-zinc-400">{t("invoices.noFile")}</span>
                     )}
+                    <button
+                      type="button"
+                      disabled={deletingId === r.id}
+                      className="rounded-lg border border-red-200 bg-red-50 px-3 py-1 text-xs text-red-800 hover:bg-red-100 disabled:opacity-50"
+                      onClick={() => void removeInvoice(r.id)}
+                    >
+                      {deletingId === r.id ? "…" : t("invoices.delete")}
+                    </button>
                   </div>
                 </div>
               </div>

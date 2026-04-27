@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClientSafe, getSupabasePublicEnv } from "@/lib/supabase/client";
+import { useI18n } from "@/lib/i18n/LocaleContext";
+import { dictionaries, translate, type Locale } from "@/lib/i18n/dictionaries";
 
 type MonthBucket = {
   key: string; // YYYY-MM
@@ -19,12 +21,13 @@ function monthKey(d: Date): string {
   return `${y}-${m}`;
 }
 
-function monthLabelTr(key: string): string {
-  const [y, m] = key.split("-");
-  const monthNo = Number(m);
-  const names = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
-  const mn = monthNo >= 1 && monthNo <= 12 ? names[monthNo - 1] : m;
-  return `${mn} ${y}`;
+function monthLabel(key: string, locale: Locale): string {
+  const [ys, ms] = key.split("-");
+  const y = Number(ys);
+  const m = Number(ms);
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return key;
+  const d = new Date(y, m - 1, 1);
+  return d.toLocaleDateString(locale === "de" ? "de-DE" : "tr-TR", { month: "short", year: "numeric" });
 }
 
 function startOfMonth(d: Date): Date {
@@ -50,6 +53,7 @@ function normalizeCategory(desc: string): string {
 }
 
 export default function DashboardPage() {
+  const { t, locale } = useI18n();
   const supabase = useMemo(() => createSupabaseBrowserClientSafe(), []);
   const env = getSupabasePublicEnv();
   const [email, setEmail] = useState<string | null>(null);
@@ -78,6 +82,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     (async () => {
+      const unkSupplier = translate(dictionaries[locale], "invoices.supplier");
       setStatsError(null);
       setMonths([]);
       setThisMonthTotal(null);
@@ -116,7 +121,7 @@ export default function DashboardPage() {
         for (let i = 0; i < 6; i++) {
           const d = addMonths(startOfMonth(now), -i);
           const key = monthKey(d);
-          buckets.set(key, { key, label: monthLabelTr(key), total: 0, vatTotal: 0, count: 0 });
+          buckets.set(key, { key, label: monthLabel(key, locale), total: 0, vatTotal: 0, count: 0 });
         }
 
         const customerAgg = new Map<string, number>();
@@ -145,7 +150,7 @@ export default function DashboardPage() {
           if (key === thisMonthKey) {
             const cid = String((r as any).id ?? "");
             if (cid) thisMonthIds.push(cid);
-            const custName = String((r as any).customer?.name ?? "").trim() || "Bilinmeyen tedarikçi";
+            const custName = String((r as any).customer?.name ?? "").trim() || unkSupplier;
             customerAgg.set(custName, (customerAgg.get(custName) ?? 0) + t);
           }
         }
@@ -192,22 +197,25 @@ export default function DashboardPage() {
               .slice(0, 7),
           );
         }
-      } catch (e: any) {
-        setStatsError(e?.message ?? "İstatistik yüklenemedi.");
+      } catch (e: unknown) {
+        setStatsError(e instanceof Error ? e.message : translate(dictionaries[locale], "dashboard.statsErr"));
       } finally {
         setStatsLoading(false);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [env.ok, supabase]);
+  }, [env.ok, supabase, locale]);
 
   const currencyFmt = useMemo(() => {
     try {
-      return new Intl.NumberFormat("tr-TR", { style: "currency", currency: "EUR" });
+      return new Intl.NumberFormat(locale === "de" ? "de-DE" : "tr-TR", {
+        style: "currency",
+        currency: "EUR",
+      });
     } catch {
       return null;
     }
-  }, []);
+  }, [locale]);
 
   const fmtMoney = (n: number | null) => {
     const v = typeof n === "number" ? n : 0;
@@ -216,39 +224,44 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-[var(--app-navy)]">Panel</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-[var(--app-navy)]">{t("dashboard.title")}</h1>
       <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-zinc-600">
           {!env.ok
-            ? "Bağlantı ayarları eksik. `.env.local` dosyasını doldurun."
+            ? t("dashboard.envMissing")
             : loading
-              ? "Yükleniyor..."
+              ? t("dashboard.loading")
               : email
-                ? `Giriş: ${email}`
-                : "Giriş yapılmamış."}
+                ? `${t("dashboard.loginLine")}: ${email}`
+                : t("dashboard.notSignedIn")}
         </p>
         {!env.ok ? null : !loading && !email ? (
-          <a className="inline-flex w-fit items-center justify-center rounded-xl bg-black px-4 py-2 text-sm text-white" href="/login">
-            Giriş Yap
+          <a
+            className="inline-flex w-fit items-center justify-center rounded-xl bg-[var(--app-navy)] px-4 py-2 text-sm text-white"
+            href="/login"
+          >
+            {t("dashboard.signInBtn")}
           </a>
         ) : null}
       </div>
 
       <div className="mt-8 grid gap-4 md:grid-cols-3">
         <div className="rounded-2xl border border-[var(--app-border)] bg-white p-5">
-          <p className="text-xs text-zinc-500">Bu ay toplam</p>
-          <p className="mt-2 text-xl font-semibold">{statsLoading ? "Yükleniyor..." : fmtMoney(thisMonthTotal)}</p>
-          <p className="mt-1 text-xs text-zinc-500">{thisMonthCount == null ? "—" : `${thisMonthCount} fatura`}</p>
+          <p className="text-xs text-zinc-500">{t("dashboard.monthTotal")}</p>
+          <p className="mt-2 text-xl font-semibold">{statsLoading ? t("dashboard.loading") : fmtMoney(thisMonthTotal)}</p>
+          <p className="mt-1 text-xs text-zinc-500">
+            {thisMonthCount == null ? "—" : `${thisMonthCount} ${t("dashboard.invoicesCount")}`}
+          </p>
         </div>
         <div className="rounded-2xl border border-[var(--app-border)] bg-white p-5">
-          <p className="text-xs text-zinc-500">Bu ay KDV / ön vergi toplamı</p>
-          <p className="mt-2 text-xl font-semibold">{statsLoading ? "Yükleniyor..." : fmtMoney(thisMonthVat)}</p>
-          <p className="mt-1 text-xs text-zinc-500">KDV alanı boş olan faturalar dahil olmayabilir</p>
+          <p className="text-xs text-zinc-500">{t("dashboard.monthVat")}</p>
+          <p className="mt-2 text-xl font-semibold">{statsLoading ? t("dashboard.loading") : fmtMoney(thisMonthVat)}</p>
+          <p className="mt-1 text-xs text-zinc-500">{t("dashboard.vatNote")}</p>
         </div>
         <div className="rounded-2xl border border-[var(--app-border)] bg-white p-5">
-          <p className="text-xs text-zinc-500">En çok harcama — tedarikçi (bu ay)</p>
+          <p className="text-xs text-zinc-500">{t("dashboard.topSpend")}</p>
           <p className="mt-2 text-xl font-semibold">
-            {statsLoading ? "Yükleniyor..." : topCustomers[0] ? topCustomers[0].label : "—"}
+            {statsLoading ? t("dashboard.loading") : topCustomers[0] ? topCustomers[0].label : "—"}
           </p>
           <p className="mt-1 text-xs text-zinc-500">
             {statsLoading ? " " : topCustomers[0] ? fmtMoney(topCustomers[0].total) : " "}
@@ -263,8 +276,8 @@ export default function DashboardPage() {
       ) : null}
       {excludedOtherCurrencyCount && excludedOtherCurrencyCount > 0 ? (
         <div className="mt-4 rounded-2xl border border-[var(--app-border)] bg-white px-4 py-3 text-sm text-zinc-700">
-          Not: İstatistikler şu an sadece <span className="font-medium">EUR</span> faturalarını topluyor.{" "}
-          {excludedOtherCurrencyCount} adet farklı para birimli fatura hariç tutuldu.
+          {t("dashboard.eurOnlyNote")}{" "}
+          <span className="font-medium">EUR</span> · {excludedOtherCurrencyCount} {t("dashboard.excluded")}
         </div>
       ) : null}
 
@@ -272,8 +285,8 @@ export default function DashboardPage() {
         <div className="rounded-2xl border border-[var(--app-border)] bg-white p-5">
           <div className="flex items-end justify-between gap-3">
             <div>
-              <p className="text-sm font-medium">Aylık trend (son 6 ay)</p>
-              <p className="mt-1 text-xs text-zinc-500">Toplam fatura tutarı</p>
+              <p className="text-sm font-medium">{t("dashboard.trendTitle")}</p>
+              <p className="mt-1 text-xs text-zinc-500">{t("dashboard.trendSub")}</p>
             </div>
           </div>
           <div className="mt-4 grid gap-2">
@@ -287,12 +300,12 @@ export default function DashboardPage() {
         </div>
 
         <div className="rounded-2xl border border-[var(--app-border)] bg-white p-5">
-          <p className="text-sm font-medium">En çok nereye harcanmış? (bu ay)</p>
-          <p className="mt-1 text-xs text-zinc-500">Kalem açıklamalarından otomatik gruplanır</p>
+          <p className="text-sm font-medium">{t("dashboard.spendTitle")}</p>
+          <p className="mt-1 text-xs text-zinc-500">{t("dashboard.spendSub")}</p>
 
           <div className="mt-4 grid gap-5">
             <div>
-              <p className="text-xs font-medium text-zinc-600">Tedarikçiye göre</p>
+              <p className="text-xs font-medium text-zinc-600">{t("dashboard.bySupplier")}</p>
               <div className="mt-2 grid gap-2">
                 {topCustomers.length ? (
                   topCustomers.map((r) => (
@@ -302,13 +315,13 @@ export default function DashboardPage() {
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-zinc-600">{statsLoading ? "Yükleniyor..." : "Bu ay fatura yok."}</p>
+                  <p className="text-sm text-zinc-600">{statsLoading ? t("dashboard.loading") : t("dashboard.noInvoicesThisMonth")}</p>
                 )}
               </div>
             </div>
 
             <div>
-              <p className="text-xs font-medium text-zinc-600">Kalem kategorisine göre</p>
+              <p className="text-xs font-medium text-zinc-600">{t("dashboard.byCategory")}</p>
               <div className="mt-2 grid gap-2">
                 {topCategories.length ? (
                   topCategories.map((r) => (
@@ -318,9 +331,7 @@ export default function DashboardPage() {
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-zinc-600">
-                    {statsLoading ? "Yükleniyor..." : "Bu ay kalem detayı yok (veya tutar alanları boş)."}
-                  </p>
+                  <p className="text-sm text-zinc-600">{statsLoading ? t("dashboard.loading") : t("dashboard.noItems")}</p>
                 )}
               </div>
             </div>
