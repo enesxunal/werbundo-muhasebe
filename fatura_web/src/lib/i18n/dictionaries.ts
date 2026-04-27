@@ -64,7 +64,9 @@ export const tr: MessageTree = {
     error: "Yanıt alınamadı. Bir süre sonra tekrar deneyin.",
     profileHint: "Daha uyumlu yanıtlar için profilden firma ünvanı ve adres girin.",
     profileLink: "Firma bilgisi → Profil",
-    needLogin: "Önce giriş yapmalısınız.",
+    needLogin: "Oturum geçersiz veya süresi doldu. Sayfayı yenileyip tekrar deneyin.",
+    llmFail:
+      "Yapay zekâ yanıtı alınamadı. Vercel ortam değişkenlerinde OPENAI_API_KEY veya GEMINI_API_KEY tanımlı mı kontrol edin (fatura okuma ile aynı anahtarlar).",
     openChat: "Asistanı aç",
     closeChat: "Kapat",
     widgetHint: "Faturalarınıza ve panele göre yanıtlar.",
@@ -398,7 +400,9 @@ export const de: MessageTree = {
     error: "Antwort fehlgeschlagen. Bitte später erneut versuchen.",
     profileHint: "Tragen Sie im Profil Firma und Adresse ein für passendere Antworten.",
     profileLink: "Firmendaten → Profil",
-    needLogin: "Bitte zuerst anmelden.",
+    needLogin: "Sitzung ungültig oder abgelaufen. Seite neu laden und erneut versuchen.",
+    llmFail:
+      "KI-Antwort fehlgeschlagen. Prüfen Sie auf Vercel OPENAI_API_KEY oder GEMINI_API_KEY (wie beim Rechnungseinlesen).",
     openChat: "Assistent öffnen",
     closeChat: "Schließen",
     widgetHint: "Antworten basierend auf Ihren Rechnungen & der Übersicht.",

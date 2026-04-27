@@ -81,13 +81,13 @@ async function runOpenAI(
 
   if (!resp.ok) {
     const t = await resp.text();
-    return { ok: false, error: `OpenAI ${resp.status}: ${t.slice(0, 400)}` };
+    return { ok: false, error: `LLM_OPENAI_HTTP:${resp.status}:${t.slice(0, 400)}` };
   }
 
   const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content !== "string" || !content.trim()) {
-    return { ok: false, error: "EMPTY_REPLY" };
+    return { ok: false, error: "LLM_OPENAI_EMPTY" };
   }
   return { ok: true, reply: content.trim() };
 }
@@ -99,7 +99,11 @@ async function runGemini(
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) return { ok: false, error: "GEMINI_API_KEY" };
 
-  const model = (process.env.ASSISTANT_GEMINI_MODEL ?? process.env.GEMINI_MODEL ?? "gemini-2.0-flash").trim();
+  const model = (
+    process.env.ASSISTANT_GEMINI_MODEL ??
+    process.env.GEMINI_MODEL ??
+    "gemini-2.5-flash"
+  ).trim();
 
   const contents = messages.map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
@@ -122,21 +126,42 @@ async function runGemini(
 
   if (!resp.ok) {
     const t = await resp.text();
-    return { ok: false, error: `Gemini ${resp.status}: ${t.slice(0, 400)}` };
+    return { ok: false, error: `LLM_GEMINI_HTTP:${resp.status}:${t.slice(0, 400)}` };
   }
 
-  const data = (await resp.json()) as {
-    candidates?: { content?: { parts?: { text?: string }[] } }[];
-  };
-  const parts = data?.candidates?.[0]?.content?.parts;
-  const text =
-    Array.isArray(parts) && typeof parts[0]?.text === "string"
-      ? parts[0].text
-      : typeof (data as any)?.candidates?.[0]?.content?.text === "string"
-        ? String((data as any).candidates[0].content.text)
-        : "";
-  if (!text.trim()) {
-    return { ok: false, error: "EMPTY_REPLY" };
+  const data = (await resp.json()) as Record<string, unknown>;
+  const text = extractGeminiText(data);
+  if (text.trim()) {
+    return { ok: true, reply: text.trim() };
   }
-  return { ok: true, reply: text.trim() };
+
+  const block = (data as { promptFeedback?: { blockReason?: string } })?.promptFeedback?.blockReason;
+  const finish = (data as { candidates?: { finishReason?: string }[] })?.candidates?.[0]?.finishReason;
+  return {
+    ok: false,
+    error: `LLM_GEMINI_EMPTY:${finish ?? "?"}:${block ?? "?"}`,
+  };
+}
+
+/** Gemini yanıtında metin birden fazla part veya farklı yerde gelebilir. */
+function extractGeminiText(data: Record<string, unknown>): string {
+  const cand = Array.isArray(data.candidates) ? data.candidates[0] : undefined;
+  if (!cand || typeof cand !== "object") return "";
+
+  const content = (cand as { content?: unknown }).content;
+  if (!content || typeof content !== "object") return "";
+
+  const parts = (content as { parts?: unknown }).parts;
+  if (!Array.isArray(parts)) {
+    const direct = (content as { text?: string }).text;
+    return typeof direct === "string" ? direct : "";
+  }
+
+  const chunks: string[] = [];
+  for (const p of parts) {
+    if (p && typeof p === "object" && typeof (p as { text?: string }).text === "string") {
+      chunks.push((p as { text: string }).text);
+    }
+  }
+  return chunks.join("");
 }

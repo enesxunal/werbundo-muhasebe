@@ -7,6 +7,23 @@ import { useI18n } from "@/lib/i18n/LocaleContext";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
+function mapAssistantFetchError(res: Response, code: string, t: (path: string) => string): string {
+  const c = code ?? "";
+  if (c === "NO_PROVIDER" || c === "GEMINI_API_KEY" || c === "OPENAI_API_KEY") return t("assistant.noKey");
+  if (res.status === 401 || c === "UNAUTHORIZED") return t("assistant.needLogin");
+  if (
+    c.startsWith("LLM_OPENAI_HTTP") ||
+    c.startsWith("LLM_GEMINI_HTTP") ||
+    c.startsWith("LLM_OPENAI_EMPTY") ||
+    c.startsWith("LLM_GEMINI_EMPTY") ||
+    c.startsWith("OPENAI_API_KEY") ||
+    c.startsWith("GEMINI_API_KEY")
+  ) {
+    return t("assistant.llmFail");
+  }
+  return t("assistant.error");
+}
+
 export function FloatingAssistant() {
   const { t, locale } = useI18n();
   const env = useMemo(() => getSupabasePublicEnv(), []);
@@ -62,6 +79,9 @@ export function FloatingAssistant() {
     scrollBottom();
 
     try {
+      if (supabase) {
+        await supabase.auth.refreshSession();
+      }
       const session = supabase ? (await supabase.auth.getSession()).data.session : null;
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (session?.access_token) {
@@ -78,17 +98,18 @@ export function FloatingAssistant() {
         }),
       });
 
-      const json = (await res.json()) as { ok?: boolean; reply?: string; error?: string };
+      let json: { ok?: boolean; reply?: string; error?: string };
+      try {
+        json = (await res.json()) as { ok?: boolean; reply?: string; error?: string };
+      } catch {
+        setError(t("assistant.error"));
+        setLoading(false);
+        scrollBottom();
+        return;
+      }
 
       if (!res.ok || !json.ok || typeof json.reply !== "string") {
-        const code = json.error ?? "";
-        if (code === "NO_PROVIDER" || code.includes("OPENAI") || code.includes("GEMINI")) {
-          setError(t("assistant.noKey"));
-        } else if (res.status === 401) {
-          setError(t("assistant.needLogin"));
-        } else {
-          setError(t("assistant.error"));
-        }
+        setError(mapAssistantFetchError(res, String(json.error ?? ""), t));
         setLoading(false);
         scrollBottom();
         return;
