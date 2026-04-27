@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   getImportHistory,
   subscribeImportHistory,
@@ -23,11 +23,16 @@ export default function ImportHistoryPage() {
   const { t, locale } = useI18n();
   const localeTag = locale === "de" ? "de-DE" : "tr-TR";
 
-  const rows = useSyncExternalStore(
-    subscribeImportHistory,
-    () => getImportHistory(),
-    () => [] as ImportHistoryEntry[],
-  );
+  /** İlk boyama sunucu + istemci aynı ([]) olmalı; localStorage yalnızca mount sonrası — hydration hatası önlenir. */
+  const [rows, setRows] = useState<ImportHistoryEntry[]>([]);
+
+  useEffect(() => {
+    function refresh() {
+      setRows(getImportHistory());
+    }
+    refresh();
+    return subscribeImportHistory(refresh);
+  }, []);
 
   const counts = useMemo(() => {
     let ok = 0;
@@ -85,8 +90,11 @@ export default function ImportHistoryPage() {
           {rows.length === 0 ? (
             <div className="px-5 py-8 text-sm text-zinc-600">{t("importHistory.empty")}</div>
           ) : (
-            rows.map((r) => (
-              <div key={r.id} className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            rows.map((r, idx) => (
+              <div
+                key={r.id ?? `row-${r.finishedAt}-${idx}`}
+                className="flex flex-col gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+              >
                 <div className="min-w-0">
                   <div className="truncate font-medium">{r.fileName}</div>
                   <div className="mt-1 text-xs text-zinc-500">
