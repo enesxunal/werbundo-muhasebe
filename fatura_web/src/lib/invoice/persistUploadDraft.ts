@@ -1,6 +1,41 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { uploadDocument } from "@/lib/upload/documents";
 
+export class DuplicateInvoiceError extends Error {
+  readonly existingInvoiceId?: string;
+
+  constructor(message: string, existingInvoiceId?: string) {
+    super(message);
+    this.name = "DuplicateInvoiceError";
+    this.existingInvoiceId = existingInvoiceId;
+  }
+}
+
+function normalizeInvoiceNo(s: string): string {
+  return s.replace(/\s+/g, " ").replace(/[–—]/g, "-").trim().toUpperCase();
+}
+
+async function findDuplicateInvoiceId(
+  supabase: SupabaseClient,
+  userId: string,
+  invoiceNo: string | null,
+  issueDate: string,
+): Promise<string | null> {
+  const raw = invoiceNo?.trim();
+  if (!raw || !issueDate) return null;
+  const target = normalizeInvoiceNo(raw);
+
+  const { data, error } = await supabase.from("invoices").select("id,invoice_no").eq("user_id", userId).eq("issue_date", issueDate);
+  if (error || !data?.length) return null;
+
+  for (const row of data as { id: string; invoice_no: string | null }[]) {
+    const inv = row.invoice_no?.trim();
+    if (!inv) continue;
+    if (normalizeInvoiceNo(inv) === target) return row.id;
+  }
+  return null;
+}
+
 export type UploadInvoiceItem = {
   lineNo?: number;
   description: string;
@@ -80,7 +115,7 @@ async function updateCustomerDetails(
  */
 async function resolveCustomerId(supabase: SupabaseClient, userId: string, draft: UploadInvoiceDraft): Promise<string> {
   const nameKey = draft.customerName.replace(/\s+/g, " ").trim();
-  if (!nameKey) throw new Error("Müşteri adı gerekli.");
+  if (!nameKey) throw new Error("Tedarikçi (faturayı düzenleyen firma) adı gerekli.");
 
   const { data: rows, error: findErr } = await supabase
     .from("customers")
@@ -114,11 +149,19 @@ export async function persistUploadDraft(args: {
   draft: UploadInvoiceDraft;
   aiApplied: boolean;
   aiConfidence: number | null;
-}): Promise<void> {
+}): Promise<{ invoiceId: string }> {
   const { supabase, userId, file, draft, aiApplied, aiConfidence } = args;
 
   const totalNum = toNum(draft.total);
   if (typeof totalNum !== "number") throw new Error("Toplam tutar gerekli.");
+
+  const dupId = await findDuplicateInvoiceId(supabase, userId, draft.invoiceNo, draft.issueDate);
+  if (dupId) {
+    throw new DuplicateInvoiceError(
+      "Bu fatura numarası ve düzenleme tarihi ile kayıt zaten var. Tekrar yüklemeden önce Faturalar listesinden kontrol edin.",
+      dupId,
+    );
+  }
 
   const customerId = await resolveCustomerId(supabase, userId, draft);
   const doc = await uploadDocument({ file, userId, docType: "invoice" });
@@ -189,4 +232,6 @@ export async function persistUploadDraft(args: {
       }
     }
   }
+
+  return { invoiceId };
 }

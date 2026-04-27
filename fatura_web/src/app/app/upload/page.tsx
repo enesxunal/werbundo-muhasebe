@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 import { runInvoiceOcr } from "@/lib/ocr/runOcr";
 import { prepareInvoiceImageForVision } from "@/lib/vision/prepareInvoiceImageForVision";
-import { persistUploadDraft, type UploadInvoiceDraft } from "@/lib/invoice/persistUploadDraft";
+import { appendImportHistory } from "@/lib/invoice/importHistoryStore";
+import { DuplicateInvoiceError, persistUploadDraft, type UploadInvoiceDraft } from "@/lib/invoice/persistUploadDraft";
 import {
   clearInvoiceJob,
   getServerSnapshot,
@@ -71,7 +72,7 @@ export default function UploadPage() {
   const [customerTaxOffice, setCustomerTaxOffice] = useState("");
   const [invoiceNo, setInvoiceNo] = useState("");
   const [issueDate, setIssueDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
-  const [currency, setCurrency] = useState<"TRY" | "USD" | "EUR">("TRY");
+  const [currency, setCurrency] = useState<"TRY" | "USD" | "EUR">("EUR");
   const [subtotal, setSubtotal] = useState<string>("");
   const [vatTotal, setVatTotal] = useState<string>("");
   const [total, setTotal] = useState<string>("");
@@ -116,7 +117,7 @@ export default function UploadPage() {
       const diff = Math.abs((s + v) - t);
       if (diff > 0.02) w.push(`Toplam kontrolü: AraToplam + KDV = ${(s + v).toFixed(2)} ama Toplam = ${t.toFixed(2)}`);
     }
-    if (!next.customerName.trim()) w.push("Müşteri adı boş görünüyor.");
+    if (!next.customerName.trim()) w.push("Tedarikçi (faturayı kesen firma) adı boş görünüyor.");
     if (!next.issueDate) w.push("Tarih boş görünüyor.");
     if (next.items && next.items.length > 0) {
       const sum = next.items
@@ -368,7 +369,7 @@ export default function UploadPage() {
           customerTaxOffice: "",
           invoiceNo: "",
           issueDate: new Date().toISOString().slice(0, 10),
-          currency: "TRY",
+          currency: "EUR",
           subtotal: "",
           vatTotal: "",
           total: "",
@@ -408,7 +409,7 @@ export default function UploadPage() {
 
           const cName = extracted.customerName?.trim() ?? "";
           const iDate = extracted.issueDateISO ?? new Date().toISOString().slice(0, 10);
-          const cur = (extracted.currency ?? "TRY") as "TRY" | "USD" | "EUR";
+          const cur = (extracted.currency ?? "EUR") as "TRY" | "USD" | "EUR";
           const t = typeof extracted.total === "number" ? extracted.total : undefined;
           const v = typeof extracted.vatTotal === "number" ? extracted.vatTotal : undefined;
           const s = typeof t === "number" && typeof v === "number" ? Math.max(0, t - v) : undefined;
@@ -547,7 +548,7 @@ export default function UploadPage() {
           setProgress({ status: "Kaydediliyor", progress: 0.95 });
         }
         try {
-          await persistUploadDraft({
+          const { invoiceId } = await persistUploadDraft({
             supabase: sb,
             userId: user.id,
             file: currentFile,
@@ -557,24 +558,65 @@ export default function UploadPage() {
           });
           setInvoiceJob({
             status: "ok",
-            message: "Fatura kaydedildi. Listeden kontrol edebilirsin.",
+            message: "Fatura kaydedildi.",
             finishedAt: Date.now(),
             fileName: currentFile.name,
+            invoiceId,
+          });
+          appendImportHistory({
+            fileName: currentFile.name,
+            startedAt,
+            finishedAt: Date.now(),
+            status: "ok",
+            detail: "Kayıt tamamlandı",
+            invoiceId,
           });
           if (aliveRef.current) {
             setReviewOpen(false);
             setError(null);
-            setMessage("Fatura kaydedildi. Listeden kontrol edebilirsin.");
+            setMessage("Fatura kaydedildi.");
             setFile(null);
             setProgress({ status: "Tamamlandı", progress: 1 });
           }
-        } catch (persistErr: any) {
-          const pe = persistErr?.message ?? "Kaydedilemedi.";
+        } catch (persistErr: unknown) {
+          if (persistErr instanceof DuplicateInvoiceError) {
+            setInvoiceJob({
+              status: "duplicate",
+              message: persistErr.message,
+              finishedAt: Date.now(),
+              fileName: currentFile.name,
+              existingInvoiceId: persistErr.existingInvoiceId,
+            });
+            appendImportHistory({
+              fileName: currentFile.name,
+              startedAt,
+              finishedAt: Date.now(),
+              status: "duplicate",
+              detail: persistErr.message,
+              invoiceId: persistErr.existingInvoiceId,
+            });
+            if (aliveRef.current) {
+              setError(null);
+              setMessage("Bu fatura daha önce yüklenmiş.");
+              setReviewOpen(false);
+              setFile(null);
+              setProgress(null);
+            }
+            return;
+          }
+          const pe = persistErr instanceof Error ? persistErr.message : "Kaydedilemedi.";
           setInvoiceJob({
             status: "error",
             error: pe,
             finishedAt: Date.now(),
             fileName: currentFile.name,
+          });
+          appendImportHistory({
+            fileName: currentFile.name,
+            startedAt,
+            finishedAt: Date.now(),
+            status: "error",
+            detail: pe,
           });
           if (aliveRef.current) {
             setError(pe);
@@ -619,7 +661,7 @@ export default function UploadPage() {
         return;
       }
 
-      await persistUploadDraft({
+      const { invoiceId } = await persistUploadDraft({
         supabase,
         userId: user.id,
         file,
@@ -628,13 +670,49 @@ export default function UploadPage() {
         aiConfidence,
       });
 
+      appendImportHistory({
+        fileName: file.name,
+        startedAt: Date.now(),
+        finishedAt: Date.now(),
+        status: "ok",
+        detail: "Manuel onaylı kayıt",
+        invoiceId,
+      });
+      setInvoiceJob({
+        status: "ok",
+        message: "Fatura kaydedildi.",
+        finishedAt: Date.now(),
+        fileName: file.name,
+        invoiceId,
+      });
+
       setProgress({ status: "Tamamlandı", progress: 1 });
-      setMessage("Fatura kaydedildi. Listeden kontrol edebilirsin.");
+      setMessage("Fatura kaydedildi.");
       setFile(null);
       setReviewOpen(false);
-    } catch (err: any) {
-      setError(err?.message ?? "Kaydedilemedi.");
-      setProgress(null);
+    } catch (err: unknown) {
+      if (err instanceof DuplicateInvoiceError) {
+        appendImportHistory({
+          fileName: file.name,
+          startedAt: Date.now(),
+          finishedAt: Date.now(),
+          status: "duplicate",
+          detail: err.message,
+          invoiceId: err.existingInvoiceId,
+        });
+        setInvoiceJob({
+          status: "duplicate",
+          message: err.message,
+          finishedAt: Date.now(),
+          fileName: file.name,
+          existingInvoiceId: err.existingInvoiceId,
+        });
+        setMessage("Bu fatura daha önce yüklenmiş.");
+        setProgress(null);
+      } else {
+        setError(err instanceof Error ? err.message : "Kaydedilemedi.");
+        setProgress(null);
+      }
     } finally {
       setBusy(false);
     }
@@ -644,17 +722,17 @@ export default function UploadPage() {
     <div>
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Fatura Yükle</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--app-navy)]">Fatura yükle</h1>
           <p className="mt-2 text-sm text-zinc-600">
-            Fotoğrafı yükle: OCR + (varsa) AI sonrası fatura doğrudan kaydedilir. Müşteri adı veritabanında varsa aynı müşteriye eklenir; yoksa yeni müşteri açılır. Kayıt hata verirse aşağıda düzenleyip tekrar kaydedebilirsin.
+            Görsel yükleyin; OCR ve (varsa) yapay zekâ ile okuma yapılır ve kayıt oluşturulur. Tedarikçi (faturayı kesen firma) sistemde varsa aynı kayda eklenir; yoksa yeni tedarikçi açılır. Hata olursa alanları düzeltip kaydedebilirsiniz.
           </p>
         </div>
         <div className="flex gap-2">
           <a className="rounded-xl border bg-white px-4 py-2 text-sm" href="/app/invoices">
             Faturalar
           </a>
-          <a className="rounded-xl border bg-white px-4 py-2 text-sm" href="/app/customers">
-            Müşteriler
+          <a className="rounded-xl border border-[var(--app-border)] bg-white px-4 py-2 text-sm" href="/app/customers">
+            Tedarikçiler
           </a>
         </div>
       </div>
@@ -696,7 +774,7 @@ export default function UploadPage() {
               <div>
                 <p className="text-sm font-medium">Kayıt hatası — düzelt ve kaydet</p>
                 <p className="mt-1 text-xs text-zinc-600">
-                  Otomatik kayıt başarısız olduysa alanları düzeltip Kaydet&apos;e bas. Müşteri adı mevcut kayıtla aynıysa fatura o müşteriye eklenir.
+                  Otomatik kayıt başarısız olduysa düzeltip Kaydet&apos;e basın. Tedarikçi adı mevcut kayıtla eşleşiyorsa fatura o firmaya bağlanır.
                 </p>
               </div>
               <button
@@ -729,7 +807,7 @@ export default function UploadPage() {
 
             <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <label className="text-sm font-medium">Müşteri Adı</label>
+                <label className="text-sm font-medium">Tedarikçi (Rechnungsaussteller)</label>
                 <input
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   value={customerName}
@@ -755,7 +833,7 @@ export default function UploadPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">VKN / TCKN</label>
+                <label className="text-sm font-medium">USt-IdNr / vergi no</label>
                 <input
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   value={customerTaxNo}
@@ -780,7 +858,7 @@ export default function UploadPage() {
                 />
               </div>
               <div>
-                <label className="text-sm font-medium">Vergi Dairesi</label>
+                <label className="text-sm font-medium">Steuernummer</label>
                 <input
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   value={customerTaxOffice}
@@ -837,69 +915,109 @@ export default function UploadPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl border bg-white">
+            <div className="rounded-2xl border bg-white overflow-x-auto">
               <div className="border-b px-4 py-2 text-sm font-medium">Kalemler</div>
-              <div className="divide-y">
+              <div className="min-w-[760px] divide-y">
                 {items.length === 0 ? (
                   <div className="px-4 py-3 text-sm text-zinc-600">Kalem bulunamadı (isteğe bağlı).</div>
                 ) : (
                   <>
-                    <div className="hidden bg-zinc-50 px-4 py-2 text-[11px] font-medium text-zinc-600 md:grid md:grid-cols-12 md:gap-2">
-                      <div className="md:col-span-7">Açıklama</div>
-                      <div className="md:col-span-2">Birim fiyat</div>
-                      <div className="md:col-span-2">Tutar</div>
-                      <div className="md:col-span-1 text-right">İşlem</div>
+                    <div className="grid grid-cols-12 gap-2 bg-zinc-50 px-4 py-2 text-[11px] font-medium text-zinc-600">
+                      <div className="col-span-1">Pos.</div>
+                      <div className="col-span-3">Bezeichnung</div>
+                      <div className="col-span-1 text-right">Menge</div>
+                      <div className="col-span-1">Einh.</div>
+                      <div className="col-span-2 text-right">Einzel</div>
+                      <div className="col-span-2 text-right">Gesamt</div>
+                      <div className="col-span-2 text-right"> </div>
                     </div>
                     {items.map((it, idx) => (
-                      <div key={idx} className="grid gap-2 px-4 py-3 md:grid-cols-12">
-                      <div className="md:col-span-7">
-                        <input
-                          className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring"
-                          value={it.description}
-                          onChange={(e) => {
-                            const next = [...items];
-                            next[idx] = { ...it, description: e.target.value };
-                            setItems(next);
-                          }}
-                          placeholder="Ürün/Hizmet"
-                        />
+                      <div key={idx} className="grid grid-cols-12 gap-2 px-4 py-3">
+                        <div className="col-span-1">
+                          <input
+                            className="w-full rounded-lg border px-2 py-2 text-sm outline-none focus:ring"
+                            value={it.lineNo != null ? String(it.lineNo) : String(idx + 1)}
+                            onChange={(e) => {
+                              const next = [...items];
+                              const v = Number(e.target.value.replace(",", "."));
+                              next[idx] = { ...it, lineNo: Number.isFinite(v) ? v : undefined };
+                              setItems(next);
+                            }}
+                          />
+                        </div>
+                        <div className="col-span-3">
+                          <input
+                            className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring"
+                            value={it.description}
+                            onChange={(e) => {
+                              const next = [...items];
+                              next[idx] = { ...it, description: e.target.value };
+                              setItems(next);
+                            }}
+                            placeholder="Ürün / Hizmet"
+                          />
+                        </div>
+                        <div className="col-span-1">
+                          <input
+                            className="w-full rounded-xl border px-2 py-2 text-sm outline-none focus:ring text-right"
+                            value={typeof it.quantity === "number" ? String(it.quantity) : ""}
+                            onChange={(e) => {
+                              const next = [...items];
+                              const n = toNum(e.target.value);
+                              next[idx] = { ...it, quantity: n };
+                              setItems(next);
+                            }}
+                            placeholder="Adet"
+                          />
+                        </div>
+                        <div className="col-span-1">
+                          <input
+                            className="w-full rounded-xl border px-2 py-2 text-sm outline-none focus:ring"
+                            value={it.unit ?? ""}
+                            onChange={(e) => {
+                              const next = [...items];
+                              next[idx] = { ...it, unit: e.target.value };
+                              setItems(next);
+                            }}
+                            placeholder="m²"
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <input
+                            className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring text-right"
+                            value={typeof it.unitPrice === "number" ? it.unitPrice.toFixed(2) : ""}
+                            onChange={(e) => {
+                              const next = [...items];
+                              const n = toNum(e.target.value);
+                              next[idx] = { ...it, unitPrice: n };
+                              setItems(next);
+                            }}
+                            placeholder="0,00"
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <input
+                            className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring text-right"
+                            value={typeof it.lineTotal === "number" ? it.lineTotal.toFixed(2) : ""}
+                            onChange={(e) => {
+                              const next = [...items];
+                              const n = toNum(e.target.value);
+                              next[idx] = { ...it, lineTotal: n };
+                              setItems(next);
+                            }}
+                            placeholder="0,00"
+                          />
+                        </div>
+                        <div className="col-span-2 flex justify-end">
+                          <button
+                            type="button"
+                            className="rounded-xl border px-3 py-2 text-sm hover:bg-zinc-50"
+                            onClick={() => setItems(items.filter((_, i) => i !== idx))}
+                          >
+                            Sil
+                          </button>
+                        </div>
                       </div>
-                      <div className="md:col-span-2">
-                        <input
-                          className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring"
-                          value={typeof it.unitPrice === "number" ? it.unitPrice.toFixed(2) : ""}
-                          onChange={(e) => {
-                            const next = [...items];
-                            const n = toNum(e.target.value);
-                            next[idx] = { ...it, unitPrice: n };
-                            setItems(next);
-                          }}
-                          placeholder="Birim fiyat"
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <input
-                          className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring"
-                          value={typeof it.lineTotal === "number" ? it.lineTotal.toFixed(2) : ""}
-                          onChange={(e) => {
-                            const next = [...items];
-                            const n = toNum(e.target.value);
-                            next[idx] = { ...it, lineTotal: n };
-                            setItems(next);
-                          }}
-                          placeholder="Toplam"
-                        />
-                      </div>
-                      <div className="md:col-span-1">
-                        <button
-                          type="button"
-                          className="w-full rounded-xl border px-3 py-2 text-sm hover:bg-zinc-50"
-                          onClick={() => setItems(items.filter((_, i) => i !== idx))}
-                        >
-                          Sil
-                        </button>
-                      </div>
-                    </div>
                     ))}
                   </>
                 )}
@@ -924,7 +1042,7 @@ export default function UploadPage() {
 
         <div className="rounded-xl border bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
           İstersen sonra tabloları açıp bakarsın: <a className="underline" href="/app/invoices">Faturalar</a> ·{" "}
-          <a className="underline" href="/app/customers">Müşteriler</a>
+          <a className="underline" href="/app/customers">Tedarikçiler</a>
         </div>
       </div>
     </div>

@@ -36,6 +36,59 @@ export type AiExtract = {
 const TABLE_HEADER =
   /pos\.?\s*menge|menge\s+bezeichnung|bezeichnung\s+einzelpreis|einzelpreis\s+gesamtpreis|gesamtpreis|^\s*pos\.?\s+menge/i;
 
+/** Almanya: USt-IdNr., Steuernummer — OCR’da satır kırılması için esnek desenler */
+export function extractGermanTaxFromOcr(ocrText: string): { ustId: string | null; steuernummer: string | null } {
+  const t = ocrText.replace(/\r/g, "");
+  let ustId: string | null = null;
+  const ustMatch =
+    t.match(/\bUSt[_\s-]*Id(?:Nr)?\.?\s*[:\s]*((?:DE)\s*\d{9})\b/i) ||
+    t.match(/\bUSt[_\s-]*Id(?:Nr)?\.?\s*[:\s]*(DE\d{9})\b/i) ||
+    t.match(/\bHändler\s+USt\.?\s*Id\.?\s*[:\s]*((?:DE)\s*\d{9})\b/i) ||
+    t.match(/\b(?:VAT\s*ID|VAT-ID)\s*[:\s]*((?:DE)\s*\d{9})\b/i);
+  if (ustMatch?.[1]) {
+    ustId = ustMatch[1].replace(/\s+/g, "").toUpperCase();
+    if (!/^DE\d{9}$/.test(ustId)) {
+      ustId = ustId.replace(/^DE/, "DE");
+    }
+  }
+
+  let steuernummer: string | null = null;
+  const stMatch =
+    t.match(/\bSteuernummer\s*[:\s]*([0-9]{3}\s*\/\s*[0-9]{4}\s*\/\s*[0-9]{4})\b/i) ||
+    t.match(/\bSt\.?\s*-?\s*Nr\.?\s*[:\s]*([0-9]{3}\s*\/\s*[0-9]{4}\s*\/\s*[0-9]{4})\b/i) ||
+    t.match(/\bSt\.?\s*-?\s*Nr\.?\s*[:\s]*([0-9\/\s]{8,24})\b/i);
+  if (stMatch?.[1]) {
+    steuernummer = stMatch[1].replace(/\s+/g, " ").trim();
+  }
+
+  return { ustId, steuernummer };
+}
+
+/** Kesilen firma (alıcı) bloğu — çıkarıcı için bu bölümdeki unvan müşteri/tedarikçi olmamalı */
+export function extractRecipientHintFromOcr(ocrText: string): string | null {
+  const t = ocrText.replace(/\r/g, "");
+  const block =
+    t.match(/\bRechnungsadresse\s*[:\s]*\s*\n?\s*([^\n]+(?:\n[^\n]+){0,4})/i) ||
+    t.match(/\bEmpfänger\s*[:\s]*\s*\n?\s*([^\n]+)/i) ||
+    t.match(/\bLieferadresse\s*[:\s]*\s*\n?\s*([^\n]+(?:\n[^\n]+){0,2})/i);
+  if (!block?.[1]) return null;
+  const firstLine = block[1].split("\n").map((l) => l.trim()).filter(Boolean)[0] ?? "";
+  const m = firstLine.match(
+    /\b([A-ZÄÖÜa-zäöüß][\wäöüÄÖÜß0-9\.\-\s&'’]*?\s(?:GmbH|gGmbH|AG|KG|UG|e\.V\.|e\.K\.))\b/,
+  );
+  if (m?.[1]) return m[1].replace(/\s+/g, " ").trim();
+  if (firstLine.length >= 3 && firstLine.length <= 120) return firstLine;
+  return null;
+}
+
+/** Rechnungsadresse öncesi metin — genelde düzenleyen / satıcı üst blokta kalır */
+export function ocrFocusIssuerBlock(ocrText: string): string {
+  const t = ocrText.replace(/\r/g, "");
+  const idx = t.search(/\bRechnungsadresse\b/i);
+  if (idx === -1) return t;
+  return t.slice(0, idx);
+}
+
 function isBadCustomerName(name: string | null | undefined): boolean {
   if (!name?.trim()) return true;
   const n = name.trim();
@@ -48,7 +101,7 @@ function isBadCustomerName(name: string | null | undefined): boolean {
 
 /** Almanca fatura üst bloğundan şirket unvanı (GmbH, AG, …) */
 export function pickCustomerNameFromOcr(ocrText: string): string | null {
-  const ocr = ocrText.replace(/\r/g, "");
+  const ocr = ocrFocusIssuerBlock(ocrText.replace(/\r/g, ""));
   const lines = ocr.split("\n");
 
   for (const raw of lines) {
@@ -105,12 +158,39 @@ export function repairInvoiceExtract(ocrText: string, data: AiExtract): AiExtrac
     items: data.items?.map((i) => ({ ...i })),
   };
 
-  const currentName = out.customer?.name;
+  const tax = extractGermanTaxFromOcr(ocrText);
+  const recipientHint = extractRecipientHintFromOcr(ocrText);
+  const cn = out.customer ?? {};
+
+  if (tax.ustId && (!cn.tax_no?.trim() || !/\bDE\d{9}\b/i.test(String(cn.tax_no)))) {
+    out.customer = { ...cn, tax_no: tax.ustId };
+  } else if (tax.ustId && cn.tax_no && !/\bDE\d{9}\b/i.test(String(cn.tax_no))) {
+    out.customer = { ...cn, tax_no: `${tax.ustId}` };
+  }
+
+  if (tax.steuernummer && !(out.customer?.tax_office ?? "").trim()) {
+    out.customer = { ...out.customer, tax_office: tax.steuernummer };
+  }
+
+  const currentName = out.customer?.name?.trim();
+  const nameMatchesRecipient =
+    currentName &&
+    recipientHint &&
+    currentName.replace(/\s+/g, " ").toLowerCase() === recipientHint.replace(/\s+/g, " ").toLowerCase();
+
+  if (nameMatchesRecipient) {
+    out.customer = { ...out.customer, name: null };
+  }
+
   // Görüntüden saf AI çıktısında OCR yok: OCR heuristiğiyle isim yazma (yanlış birleşimi önler).
-  if (ocrText.trim().length >= 12 && isBadCustomerName(currentName)) {
+  if (ocrText.trim().length >= 12 && (isBadCustomerName(out.customer?.name) || nameMatchesRecipient)) {
     const fromOcr = pickCustomerNameFromOcr(ocrText);
     if (fromOcr) {
-      out.customer = { ...out.customer, name: fromOcr };
+      const rec = recipientHint?.replace(/\s+/g, " ").toLowerCase() ?? "";
+      const pick = fromOcr.replace(/\s+/g, " ").toLowerCase();
+      if (!rec || pick !== rec) {
+        out.customer = { ...out.customer, name: fromOcr };
+      }
     }
   }
 

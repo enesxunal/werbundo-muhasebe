@@ -1,6 +1,0 @@
-watchdog
-pytesseract
-pandas
-openpyxl
-pillow
-pdf2image

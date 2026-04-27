@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Werbundo Muhasebe",
-  description: "Fatura ve ödeme (dekont) takip sistemi",
+  title: "Rechnungsverfolgung",
+  description: "Almanya düzenine uygun gelen fatura ve ön vergi (Vorsteuer) takibi",
 };
 
 export default function RootLayout({
@@ -24,7 +24,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="tr"
+      lang="de"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>

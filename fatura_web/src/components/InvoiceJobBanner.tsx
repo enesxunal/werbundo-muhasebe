@@ -28,8 +28,39 @@ export function InvoiceJobBanner() {
             {job.fileName} · {job.step} · %{Math.round((job.progress ?? 0) * 100)}
           </p>
           <p className="mt-2 text-xs text-blue-800/80">
-            Başka sayfaya geçebilirsin; bildirim altta kalır. Tarayıcıyı veya tüm sekmeleri kapatırsan işlem yarıda kalabilir — ileride bittiğinde e-posta ile de haber verebiliriz.
+            Başka menüye geçebilirsin; işlem sunucuda tamamlanır. Tarayıcıyı tamamen kapatırsan işlem yarıda kalabilir.
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (job.status === "duplicate") {
+    return (
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 px-3 pb-3">
+        <div className="pointer-events-auto mx-auto max-w-5xl rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-lg">
+          <p className="font-medium">Bu fatura zaten kayıtlı</p>
+          <p className="mt-1 text-amber-900/95">{job.message}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {job.existingInvoiceId ? (
+              <a
+                className="rounded-xl bg-amber-900 px-4 py-2 text-xs font-medium text-white hover:bg-amber-800"
+                href={`/app/invoices/${job.existingInvoiceId}`}
+              >
+                Kayda git
+              </a>
+            ) : null}
+            <a className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-xs hover:bg-amber-100/50" href="/app/import-verlauf">
+              Yükleme geçmişi
+            </a>
+            <button
+              type="button"
+              className="rounded-xl border border-amber-300 bg-white px-4 py-2 text-xs hover:bg-amber-100/50"
+              onClick={() => clearInvoiceJob()}
+            >
+              Kapat
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -61,17 +92,34 @@ export function InvoiceJobBanner() {
     );
   }
 
+  const okJob = job.status === "ok" ? job : null;
+
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 px-3 pb-3">
       <div className="pointer-events-auto mx-auto flex max-w-5xl items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 shadow-lg">
-        <p className="font-medium">{job.message}</p>
-        <button
-          type="button"
-          className="rounded-xl border border-emerald-300 bg-white px-3 py-1.5 text-xs hover:bg-emerald-100/50"
-          onClick={() => clearInvoiceJob()}
-        >
-          Tamam
-        </button>
+        <div className="min-w-0 flex-1">
+          <p className="font-medium">{job.message}</p>
+          {okJob?.invoiceId ? (
+            <a className="mt-1 inline-block text-xs underline" href={`/app/invoices/${okJob.invoiceId}`}>
+              Faturayı aç
+            </a>
+          ) : null}
+        </div>
+        <div className="flex gap-2">
+          <a
+            className="rounded-xl border border-emerald-300 bg-white px-3 py-1.5 text-xs hover:bg-emerald-100/50"
+            href="/app/import-verlauf"
+          >
+            Geçmiş
+          </a>
+          <button
+            type="button"
+            className="rounded-xl border border-emerald-300 bg-white px-3 py-1.5 text-xs hover:bg-emerald-100/50"
+            onClick={() => clearInvoiceJob()}
+          >
+            Tamam
+          </button>
+        </div>
       </div>
     </div>
   );

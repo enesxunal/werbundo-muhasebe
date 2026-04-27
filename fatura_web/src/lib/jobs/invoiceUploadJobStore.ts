@@ -1,6 +1,6 @@
-export const INVOICE_JOB_EVENT = "werbundo-invoice-job";
+export const INVOICE_JOB_EVENT = "invoice-import-job-event";
 
-const KEY = "werbundo_invoice_job_v1";
+const KEY = "invoice_import_job_v2";
 
 export type InvoiceJobSnapshot =
   | {
@@ -15,6 +15,14 @@ export type InvoiceJobSnapshot =
       message: string;
       finishedAt: number;
       fileName?: string;
+      invoiceId?: string;
+    }
+  | {
+      status: "duplicate";
+      message: string;
+      finishedAt: number;
+      fileName?: string;
+      existingInvoiceId?: string;
     }
   | {
       status: "error";

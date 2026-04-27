@@ -37,7 +37,7 @@ export default function CustomersPage() {
       if (error) throw error;
       setCustomers((data ?? []) as CustomerRow[]);
     } catch (err: any) {
-      setError(err?.message ?? "Müşteriler yüklenemedi.");
+      setError(err?.message ?? "Liste yüklenemedi.");
     } finally {
       setLoading(false);
     }
@@ -71,7 +71,7 @@ export default function CustomersPage() {
       setTaxNo("");
       await load();
     } catch (err: any) {
-      setError(err?.message ?? "Müşteri eklenemedi.");
+      setError(err?.message ?? "Eklenemedi.");
     }
   }
 
@@ -79,14 +79,14 @@ export default function CustomersPage() {
     <div>
       <div className="flex items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Müşteriler</h1>
-          <p className="mt-2 text-sm text-zinc-600">Müşteri ekle ve listele.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--app-navy)]">Tedarikçiler</h1>
+          <p className="mt-2 text-sm text-zinc-600">Faturayı düzenleyen firmalar (Lieferanten).</p>
         </div>
       </div>
 
       <form onSubmit={addCustomer} className="mt-6 grid gap-3 rounded-2xl border bg-white p-5 md:grid-cols-3">
         <div className="md:col-span-2">
-          <label className="text-sm font-medium">Müşteri Adı</label>
+          <label className="text-sm font-medium">Tedarikçi adı</label>
           <input
             className="mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring"
             value={name}
@@ -106,7 +106,7 @@ export default function CustomersPage() {
         </div>
         <div className="md:col-span-3">
           <button className="rounded-xl bg-black px-4 py-2 text-sm text-white" type="submit">
-            Müşteri Ekle
+            Ekle
           </button>
           {error ? <span className="ml-3 text-sm text-red-600">{error}</span> : null}
         </div>
@@ -118,7 +118,7 @@ export default function CustomersPage() {
           {loading ? (
             <div className="px-5 py-4 text-sm text-zinc-600">Yükleniyor...</div>
           ) : customers.length === 0 ? (
-            <div className="px-5 py-4 text-sm text-zinc-600">Henüz müşteri yok.</div>
+            <div className="px-5 py-4 text-sm text-zinc-600">Henüz kayıt yok.</div>
           ) : (
             customers.map((c) => (
               <div key={c.id} className="flex items-center justify-between gap-4 px-5 py-4">

@@ -145,7 +145,7 @@ export default function DashboardPage() {
           if (key === thisMonthKey) {
             const cid = String((r as any).id ?? "");
             if (cid) thisMonthIds.push(cid);
-            const custName = String((r as any).customer?.name ?? "").trim() || "Bilinmeyen müşteri";
+            const custName = String((r as any).customer?.name ?? "").trim() || "Bilinmeyen tedarikçi";
             customerAgg.set(custName, (customerAgg.get(custName) ?? 0) + t);
           }
         }
@@ -216,7 +216,7 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+      <h1 className="text-2xl font-semibold tracking-tight text-[var(--app-navy)]">Panel</h1>
       <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-zinc-600">
           {!env.ok
@@ -234,31 +234,19 @@ export default function DashboardPage() {
         ) : null}
       </div>
 
-      <div className="mt-6 rounded-2xl border bg-white p-5">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium">Hızlı işlem</p>
-            <p className="mt-1 text-sm text-zinc-600">Sadece fotoğraf yükle, sistem otomatik kaydetsin.</p>
-          </div>
-          <a className="rounded-xl bg-black px-4 py-2 text-sm text-white" href="/app/upload">
-            Fotoğraf Yükle
-          </a>
-        </div>
-      </div>
-
       <div className="mt-8 grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border bg-white p-5">
+        <div className="rounded-2xl border border-[var(--app-border)] bg-white p-5">
           <p className="text-xs text-zinc-500">Bu ay toplam</p>
           <p className="mt-2 text-xl font-semibold">{statsLoading ? "Yükleniyor..." : fmtMoney(thisMonthTotal)}</p>
           <p className="mt-1 text-xs text-zinc-500">{thisMonthCount == null ? "—" : `${thisMonthCount} fatura`}</p>
         </div>
-        <div className="rounded-2xl border bg-white p-5">
-          <p className="text-xs text-zinc-500">Bu ay KDV toplamı</p>
+        <div className="rounded-2xl border border-[var(--app-border)] bg-white p-5">
+          <p className="text-xs text-zinc-500">Bu ay KDV / ön vergi toplamı</p>
           <p className="mt-2 text-xl font-semibold">{statsLoading ? "Yükleniyor..." : fmtMoney(thisMonthVat)}</p>
           <p className="mt-1 text-xs text-zinc-500">KDV alanı boş olan faturalar dahil olmayabilir</p>
         </div>
-        <div className="rounded-2xl border bg-white p-5">
-          <p className="text-xs text-zinc-500">En çok harcama (bu ay)</p>
+        <div className="rounded-2xl border border-[var(--app-border)] bg-white p-5">
+          <p className="text-xs text-zinc-500">En çok harcama — tedarikçi (bu ay)</p>
           <p className="mt-2 text-xl font-semibold">
             {statsLoading ? "Yükleniyor..." : topCustomers[0] ? topCustomers[0].label : "—"}
           </p>
@@ -274,14 +262,14 @@ export default function DashboardPage() {
         </div>
       ) : null}
       {excludedOtherCurrencyCount && excludedOtherCurrencyCount > 0 ? (
-        <div className="mt-4 rounded-2xl border bg-white px-4 py-3 text-sm text-zinc-700">
+        <div className="mt-4 rounded-2xl border border-[var(--app-border)] bg-white px-4 py-3 text-sm text-zinc-700">
           Not: İstatistikler şu an sadece <span className="font-medium">EUR</span> faturalarını topluyor.{" "}
           {excludedOtherCurrencyCount} adet farklı para birimli fatura hariç tutuldu.
         </div>
       ) : null}
 
       <div className="mt-8 grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border bg-white p-5">
+        <div className="rounded-2xl border border-[var(--app-border)] bg-white p-5">
           <div className="flex items-end justify-between gap-3">
             <div>
               <p className="text-sm font-medium">Aylık trend (son 6 ay)</p>
@@ -298,13 +286,13 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl border bg-white p-5">
+        <div className="rounded-2xl border border-[var(--app-border)] bg-white p-5">
           <p className="text-sm font-medium">En çok nereye harcanmış? (bu ay)</p>
           <p className="mt-1 text-xs text-zinc-500">Kalem açıklamalarından otomatik gruplanır</p>
 
           <div className="mt-4 grid gap-5">
             <div>
-              <p className="text-xs font-medium text-zinc-600">Müşteriye göre</p>
+              <p className="text-xs font-medium text-zinc-600">Tedarikçiye göre</p>
               <div className="mt-2 grid gap-2">
                 {topCustomers.length ? (
                   topCustomers.map((r) => (

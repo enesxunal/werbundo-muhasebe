@@ -124,7 +124,7 @@ export default function EditInvoicePage() {
         window.location.href = "/login";
         return;
       }
-      if (!customerId) throw new Error("Müşteri seçmelisin.");
+      if (!customerId) throw new Error("Tedarikçi seçmelisin.");
       if (!issueDate) throw new Error("Tarih gerekli.");
       const totalNum = toNumberOrNull(total);
       if (totalNum == null) throw new Error("Toplam tutar geçersiz.");
@@ -197,7 +197,7 @@ export default function EditInvoicePage() {
 
       <form onSubmit={save} className="mt-6 grid max-w-3xl gap-4 rounded-2xl border bg-white p-6">
         <div>
-          <label className="text-sm font-medium">Müşteri</label>
+          <label className="text-sm font-medium">Tedarikçi (Lieferant)</label>
           <select
             className="mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring"
             value={customerId}
@@ -256,7 +256,7 @@ export default function EditInvoicePage() {
             />
           </div>
           <div>
-            <label className="text-sm font-medium">KDV</label>
+            <label className="text-sm font-medium">USt / KDV</label>
             <input
               className="mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring"
               value={vatTotal}
@@ -283,61 +283,108 @@ export default function EditInvoicePage() {
           />
         </div>
 
-        <div className="rounded-2xl border">
+        <div className="rounded-2xl border overflow-x-auto">
           <div className="border-b px-4 py-2 text-sm font-medium">Kalemler</div>
-          <div className="divide-y">
+          <div className="min-w-[760px] divide-y">
             {items.length === 0 ? (
               <div className="px-4 py-3 text-sm text-zinc-600">Kalem yok (isteğe bağlı ekleyebilirsin).</div>
             ) : (
-              items.map((it, idx) => (
-                <div key={idx} className="grid gap-2 px-4 py-3 md:grid-cols-12">
-                  <div className="md:col-span-5">
-                    <input
-                      className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring"
-                      value={it.description}
-                      onChange={(e) => {
-                        const n = [...items];
-                        n[idx] = { ...it, description: e.target.value };
-                        setItems(n);
-                      }}
-                      placeholder="Açıklama"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <input
-                      className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring"
-                      value={it.unitPrice}
-                      onChange={(e) => {
-                        const n = [...items];
-                        n[idx] = { ...it, unitPrice: e.target.value };
-                        setItems(n);
-                      }}
-                      placeholder="Birim fiyat"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <input
-                      className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring"
-                      value={it.lineTotal}
-                      onChange={(e) => {
-                        const n = [...items];
-                        n[idx] = { ...it, lineTotal: e.target.value };
-                        setItems(n);
-                      }}
-                      placeholder="Satır toplamı"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <button
-                      type="button"
-                      className="w-full rounded-xl border px-3 py-2 text-sm hover:bg-zinc-50"
-                      onClick={() => setItems(items.filter((_, i) => i !== idx))}
-                    >
-                      Sil
-                    </button>
-                  </div>
+              <>
+                <div className="grid grid-cols-12 gap-2 bg-zinc-50 px-4 py-2 text-[11px] font-medium text-zinc-600">
+                  <div className="col-span-1">Pos.</div>
+                  <div className="col-span-3">Bezeichnung</div>
+                  <div className="col-span-1 text-right">Menge</div>
+                  <div className="col-span-1">Einh.</div>
+                  <div className="col-span-2 text-right">Einzel</div>
+                  <div className="col-span-2 text-right">Gesamt</div>
+                  <div className="col-span-2" />
                 </div>
-              ))
+                {items.map((it, idx) => (
+                  <div key={idx} className="grid grid-cols-12 gap-2 px-4 py-3">
+                    <div className="col-span-1">
+                      <input
+                        className="w-full rounded-lg border px-2 py-2 text-sm outline-none focus:ring"
+                        value={it.line_no != null ? String(it.line_no) : String(idx + 1)}
+                        onChange={(e) => {
+                          const n = [...items];
+                          const v = Number(e.target.value.replace(",", "."));
+                          n[idx] = { ...it, line_no: Number.isFinite(v) ? v : null };
+                          setItems(n);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <input
+                        className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring"
+                        value={it.description}
+                        onChange={(e) => {
+                          const n = [...items];
+                          n[idx] = { ...it, description: e.target.value };
+                          setItems(n);
+                        }}
+                        placeholder="Açıklama"
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <input
+                        className="w-full rounded-xl border px-2 py-2 text-sm outline-none focus:ring text-right"
+                        value={it.quantity}
+                        onChange={(e) => {
+                          const n = [...items];
+                          n[idx] = { ...it, quantity: e.target.value };
+                          setItems(n);
+                        }}
+                        placeholder="Adet"
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <input
+                        className="w-full rounded-xl border px-2 py-2 text-sm outline-none focus:ring"
+                        value={it.unit}
+                        onChange={(e) => {
+                          const n = [...items];
+                          n[idx] = { ...it, unit: e.target.value };
+                          setItems(n);
+                        }}
+                        placeholder="Stk"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <input
+                        className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring text-right"
+                        value={it.unitPrice}
+                        onChange={(e) => {
+                          const n = [...items];
+                          n[idx] = { ...it, unitPrice: e.target.value };
+                          setItems(n);
+                        }}
+                        placeholder="Birim"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <input
+                        className="w-full rounded-xl border px-3 py-2 text-sm outline-none focus:ring text-right"
+                        value={it.lineTotal}
+                        onChange={(e) => {
+                          const n = [...items];
+                          n[idx] = { ...it, lineTotal: e.target.value };
+                          setItems(n);
+                        }}
+                        placeholder="Satır"
+                      />
+                    </div>
+                    <div className="col-span-2 flex justify-end">
+                      <button
+                        type="button"
+                        className="rounded-xl border px-3 py-2 text-sm hover:bg-zinc-50"
+                        onClick={() => setItems(items.filter((_, i) => i !== idx))}
+                      >
+                        Sil
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </>
             )}
           </div>
           <div className="border-t px-4 py-3">
