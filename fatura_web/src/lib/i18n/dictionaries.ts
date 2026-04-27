@@ -54,10 +54,11 @@ export const tr: MessageTree = {
     title: "Yapay zekâ asistan",
     subtitle:
       "Faturalarınız ve paneldeki istatistiklere göre soru sorun; profildeki firma bilgisi yanıtlara dahil edilir.",
-    placeholder: "Örn: Bu dönemde en çok hangi tedarikçiye ödedim?",
+    placeholder: "Sorunuzu yazın…",
+    greeting:
+      "Merhaba! Ben yapay zekâ destekli muhasebe asistanınızım. Faturalarınıza ve panele göre sorularınızı yanıtlarım — nasıl yardımcı olabilirim?",
     send: "Gönder",
     thinking: "Yanıt hazırlanıyor…",
-    empty: "Aşağıya soru yazın — yanıtlar yalnızca sizin verilerinize dayanır.",
     disclaimer: "Genel bilgilendirme içindir; hukuki veya vergi müşaviri yerine geçmez.",
     noKey: "Sunucuda yapay zekâ anahtarı yok. Yöneticiye OPENAI_API_KEY veya GEMINI_API_KEY eklemesini söyleyin.",
     error: "Yanıt alınamadı. Bir süre sonra tekrar deneyin.",
@@ -67,7 +68,6 @@ export const tr: MessageTree = {
     openChat: "Asistanı aç",
     closeChat: "Kapat",
     widgetHint: "Faturalarınıza ve panele göre yanıtlar.",
-    quickFeb: "Şubatta en çok kime ödeme yaptım?",
   },
   landing: {
     navLogin: "Giriş yap",
@@ -388,10 +388,11 @@ export const de: MessageTree = {
     title: "KI-Assistent",
     subtitle:
       "Fragen zu Ihren Rechnungen und Statistiken — Firmendaten aus dem Profil werden einbezogen.",
-    placeholder: "z. B.: Welchen Lieferanten habe ich diesen Monat am meisten bezahlt?",
+    placeholder: "Frage eingeben…",
+    greeting:
+      "Hallo! Ich bin Ihr KI-Assistent für Rechnungen und Übersicht. Ich antworte auf Basis Ihrer Daten — womit kann ich helfen?",
     send: "Senden",
     thinking: "Antwort wird erstellt…",
-    empty: "Frage unten eingeben — Antworten nur auf Basis Ihrer Daten.",
     disclaimer: "Nur allgemeine Hinweise; keine Steuerberatung.",
     noKey: "Kein KI-Schlüssel auf dem Server. OPENAI_API_KEY oder GEMINI_API_KEY setzen.",
     error: "Antwort fehlgeschlagen. Bitte später erneut versuchen.",
@@ -401,7 +402,6 @@ export const de: MessageTree = {
     openChat: "Assistent öffnen",
     closeChat: "Schließen",
     widgetHint: "Antworten basierend auf Ihren Rechnungen & der Übersicht.",
-    quickFeb: "An wen habe ich im Februar am meisten gezahlt?",
   },
   landing: {
     navLogin: "Anmelden",

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseUserFromRequest } from "@/lib/supabase/authFromRequest";
 import { buildAssistantContext, type InvoiceRow } from "@/lib/assistant/buildContext";
 import { runAssistantChat, type ChatMessage } from "@/lib/assistant/runChat";
 
@@ -40,19 +40,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
     }
 
-    const supabase = await createSupabaseServerClient();
-    if (!supabase) {
-      return NextResponse.json({ ok: false, error: "SUPABASE_ENV" }, { status: 503 });
+    const auth = await getSupabaseUserFromRequest(req);
+    if (!auth.ok) {
+      const status = auth.error === "SUPABASE_ENV" ? 503 : 401;
+      return NextResponse.json({ ok: false, error: auth.error }, { status });
     }
 
-    const {
-      data: { user },
-      error: authErr,
-    } = await supabase.auth.getUser();
-
-    if (authErr || !user) {
-      return NextResponse.json({ ok: false, error: "UNAUTHORIZED" }, { status: 401 });
-    }
+    const { supabase, user } = auth;
 
     const locale = parsed.data.locale;
     const messages = parsed.data.messages as ChatMessage[];
