@@ -2,16 +2,28 @@ export type ChatMessage = { role: "user" | "assistant"; content: string };
 
 type Provider = "openai" | "gemini";
 
+/**
+ * Panel sohbeti için sağlayıcı seçimi.
+ * - ASSISTANT_AI_PROVIDER: sadece asistan (örn. openai | gemini)
+ * - INVOICE_AI_PROVIDER: yoksa otomatik modda varsayılan **Gemini öncelikli** — çoğu kurulumda sadece GEMINI_API_KEY kullanılıyor;
+ *   yanlışlıkla tanımlı eski OPENAI_API_KEY asistanı bozmasın diye önce Gemini denenir.
+ */
 export function resolveAssistantProvider(): Provider | null {
-  const forced = (process.env.ASSISTANT_AI_PROVIDER ?? process.env.INVOICE_AI_PROVIDER ?? "").trim().toLowerCase();
-  if (forced === "openai") return "openai";
-  if (forced === "gemini") return "gemini";
-  if (forced && forced !== "auto") return null;
+  const assistantOnly = (process.env.ASSISTANT_AI_PROVIDER ?? "").trim().toLowerCase();
+  if (assistantOnly === "openai") return "openai";
+  if (assistantOnly === "gemini") return "gemini";
+  if (assistantOnly && assistantOnly !== "auto") return null;
+
+  const invoiceForced = (process.env.INVOICE_AI_PROVIDER ?? "").trim().toLowerCase();
+  if (invoiceForced === "openai") return "openai";
+  if (invoiceForced === "gemini") return "gemini";
+  if (invoiceForced && invoiceForced !== "auto") return null;
 
   const hasOpenai = Boolean(process.env.OPENAI_API_KEY?.trim());
   const hasGemini = Boolean(process.env.GEMINI_API_KEY?.trim());
-  if (hasOpenai) return "openai";
+
   if (hasGemini) return "gemini";
+  if (hasOpenai) return "openai";
   return null;
 }
 
