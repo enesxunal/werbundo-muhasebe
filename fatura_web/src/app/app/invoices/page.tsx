@@ -3,8 +3,21 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
+import { isMissingPaidAtColumnError, postgrestErrorMessage } from "@/lib/supabase/postgrestError";
 import { getSignedDocumentUrl } from "@/lib/upload/documents";
 import { useI18n } from "@/lib/i18n/LocaleContext";
+
+const INVOICE_LIST_SELECT_WITH_PAID = `
+          id,issue_date,invoice_no,currency,subtotal,vat_total,total,notes,created_at,paid_at,
+          customer:customers(id,name),
+          document:documents(id,storage_bucket,storage_path,original_filename)
+        `;
+
+const INVOICE_LIST_SELECT_LEGACY = `
+          id,issue_date,invoice_no,currency,subtotal,vat_total,total,notes,created_at,
+          customer:customers(id,name),
+          document:documents(id,storage_bucket,storage_path,original_filename)
+        `;
 
 type InvoiceRow = {
   id: string;
@@ -52,21 +65,33 @@ export default function InvoicesListPage() {
         return;
       }
 
-      const { data, error: qErr } = await supabase
+      let fallbackWithoutPaidAt = false;
+      const first = await supabase
         .from("invoices")
-        .select(
-          `
-          id,issue_date,invoice_no,currency,subtotal,vat_total,total,notes,created_at,paid_at,
-          customer:customers(id,name),
-          document:documents(id,storage_bucket,storage_path,original_filename)
-        `,
-        )
+        .select(INVOICE_LIST_SELECT_WITH_PAID)
         .order("issue_date", { ascending: false });
 
+      let data: unknown = first.data;
+      let qErr = first.error;
+
+      if (qErr && isMissingPaidAtColumnError(qErr)) {
+        fallbackWithoutPaidAt = true;
+        const second = await supabase
+          .from("invoices")
+          .select(INVOICE_LIST_SELECT_LEGACY)
+          .order("issue_date", { ascending: false });
+        data = second.data;
+        qErr = second.error;
+      }
+
       if (qErr) throw qErr;
-      setRows((data ?? []) as unknown as InvoiceRow[]);
+
+      const raw = (data ?? []) as unknown as InvoiceRow[];
+      setRows(
+        fallbackWithoutPaidAt ? raw.map((r) => ({ ...r, paid_at: null })) : raw,
+      );
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : t("common.error"));
+      setError(postgrestErrorMessage(err));
     } finally {
       setLoading(false);
     }

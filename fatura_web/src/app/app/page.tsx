@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClientSafe, getSupabasePublicEnv } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n/LocaleContext";
 import Link from "next/link";
+import {
+  isMissingPaidAtColumnError,
+  isMissingRelationError,
+  postgrestErrorMessage,
+} from "@/lib/supabase/postgrestError";
 import { dictionaries, translate, type Locale } from "@/lib/i18n/dictionaries";
 
 type MonthBucket = {
@@ -244,46 +249,57 @@ export default function DashboardPage() {
         const today = new Date();
         today.setHours(12, 0, 0, 0);
 
-        const { data: invData, error: invErr } = await supabase
+        const invQuery = await supabase
           .from("invoices")
           .select("id,issue_date,total,currency,customer:customers(name)")
           .is("paid_at", null)
           .order("issue_date", { ascending: true });
-        if (invErr) throw invErr;
 
-        const invRows = (invData ?? []) as unknown as {
-          id: string;
-          issue_date: string;
-          total: number;
-          currency: string;
-          customer: { name: string } | null;
-        }[];
+        if (invQuery.error && isMissingPaidAtColumnError(invQuery.error)) {
+          setUnpaidInvoices([]);
+        } else if (invQuery.error) {
+          throw invQuery.error;
+        } else {
+          const invRows = (invQuery.data ?? []) as unknown as {
+            id: string;
+            issue_date: string;
+            total: number;
+            currency: string;
+            customer: { name: string } | null;
+          }[];
 
-        const unpaid = invRows
-          .map((r) => {
-            const d = new Date(String(r.issue_date) + "T12:00:00");
-            const days = Math.floor((today.getTime() - d.getTime()) / (24 * 3600 * 1000));
-            const label = String(r.customer?.name ?? "").trim() || translate(dictionaries[locale], "invoices.supplier");
-            return {
-              id: r.id,
-              days,
-              label,
-              total: asNumber(r.total),
-              currency: String(r.currency ?? "EUR"),
-            };
-          })
-          .sort((a, b) => b.days - a.days);
-        setUnpaidInvoices(unpaid.slice(0, 8));
+          const unpaid = invRows
+            .map((r) => {
+              const d = new Date(String(r.issue_date) + "T12:00:00");
+              const days = Math.floor((today.getTime() - d.getTime()) / (24 * 3600 * 1000));
+              const label =
+                String(r.customer?.name ?? "").trim() || translate(dictionaries[locale], "invoices.supplier");
+              return {
+                id: r.id,
+                days,
+                label,
+                total: asNumber(r.total),
+                currency: String(r.currency ?? "EUR"),
+              };
+            })
+            .sort((a, b) => b.days - a.days);
+          setUnpaidInvoices(unpaid.slice(0, 8));
+        }
 
-        const { data: corrData, error: corrErr } = await supabase
+        const corrQuery = await supabase
           .from("correspondence")
           .select("id,deadline_date,summary,issuer_name,customer:customers(name)")
           .is("completed_at", null)
           .not("deadline_date", "is", null)
           .order("deadline_date", { ascending: true });
-        if (corrErr) throw corrErr;
 
-        const letters = (corrData ?? []) as unknown as {
+        if (corrQuery.error && isMissingRelationError(corrQuery.error, "correspondence")) {
+          setDueLetters([]);
+        } else if (corrQuery.error) {
+          throw corrQuery.error;
+        }
+
+        const letters = (corrQuery.data ?? []) as unknown as {
           id: string;
           deadline_date: string;
           summary: string | null;
@@ -302,7 +318,7 @@ export default function DashboardPage() {
           .filter((x) => x.days <= 14);
         setDueLetters(due.slice(0, 8));
       } catch (e: unknown) {
-        setReminderErr(e instanceof Error ? e.message : translate(dictionaries[locale], "dashboard.statsErr"));
+        setReminderErr(postgrestErrorMessage(e) || translate(dictionaries[locale], "dashboard.statsErr"));
       } finally {
         setReminderLoading(false);
       }

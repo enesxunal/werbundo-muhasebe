@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
+import { isMissingPaidAtColumnError, postgrestErrorMessage } from "@/lib/supabase/postgrestError";
 import { useI18n } from "@/lib/i18n/LocaleContext";
 
 type CustomerRow = { id: string; name: string };
@@ -26,7 +27,7 @@ type InvoiceDbRow = {
   vat_total: number | null;
   total: number;
   notes: string | null;
-  paid_at: string | null;
+  paid_at?: string | null;
 };
 
 type LineDbRow = {
@@ -92,12 +93,24 @@ export default function EditInvoicePage() {
         if (cErr) throw cErr;
         setCustomers((custList ?? []) as CustomerRow[]);
 
-        const { data: inv, error: invErr } = await supabase
+        let invRes = await supabase
           .from("invoices")
           .select("id,customer_id,issue_date,invoice_no,currency,subtotal,vat_total,total,notes,paid_at")
           .eq("id", invoiceId)
           .eq("user_id", uid)
           .single();
+
+        if (invRes.error && isMissingPaidAtColumnError(invRes.error)) {
+          invRes = await supabase
+            .from("invoices")
+            .select("id,customer_id,issue_date,invoice_no,currency,subtotal,vat_total,total,notes")
+            .eq("id", invoiceId)
+            .eq("user_id", uid)
+            .single();
+        }
+
+        const invErr = invRes.error;
+        const inv = invRes.data;
         if (invErr) throw invErr;
         if (!inv) throw new Error("Fatura bulunamadı.");
 
@@ -134,7 +147,7 @@ export default function EditInvoicePage() {
           }),
         );
       } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "Yüklenemedi.");
+        setError(postgrestErrorMessage(err));
       } finally {
         setLoading(false);
       }
