@@ -204,3 +204,5 @@ alter table public.customers add column if not exists phone text;
 alter table public.customers add column if not exists address text;
 
 alter table public.invoices add column if not exists confidence_total numeric(5,2);
+
+-- Versiyon 2 (muhatap türü, fatura ödeme, resmî yazılar): tam SQL → `supabase/migration_v2.sql`

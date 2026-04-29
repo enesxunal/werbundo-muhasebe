@@ -3,7 +3,7 @@ import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 export async function uploadDocument(args: {
   file: File;
   userId: string;
-  docType: "invoice" | "payment_receipt";
+  docType: "invoice" | "payment_receipt" | "correspondence";
 }) {
   const supabase = createSupabaseBrowserClientSafe();
   if (!supabase) throw new Error("Supabase ayarları eksik. `.env.local` dosyasını doldurun.");

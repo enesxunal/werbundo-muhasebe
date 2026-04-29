@@ -31,6 +31,9 @@ export function AppHeader() {
             <Link className="rounded-lg px-3 py-2 text-[var(--app-navy)] hover:bg-slate-100" href="/app/customers">
               {t("nav.suppliers")}
             </Link>
+            <Link className="rounded-lg px-3 py-2 text-[var(--app-navy)] hover:bg-slate-100" href="/app/correspondence">
+              {t("nav.correspondence")}
+            </Link>
             <Link className="rounded-lg px-3 py-2 text-[var(--app-navy)] hover:bg-slate-100" href="/app/invoices">
               {t("nav.invoices")}
             </Link>

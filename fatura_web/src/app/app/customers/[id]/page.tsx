@@ -4,6 +4,7 @@ import Image from "next/image";
 import { use, useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 import { getSignedDocumentUrl } from "@/lib/upload/documents";
+import { useI18n } from "@/lib/i18n/LocaleContext";
 
 type Customer = {
   id: string;
@@ -14,6 +15,7 @@ type Customer = {
   phone: string | null;
   address: string | null;
   created_at: string;
+  counterparty_kind: "company" | "government" | "other" | null;
 };
 
 type InvoiceRow = {
@@ -42,6 +44,7 @@ function monthKey(iso: string) {
 
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const { t } = useI18n();
   const supabase = useMemo(() => createSupabaseBrowserClientSafe(), []);
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
@@ -56,6 +59,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
   const [form, setForm] = useState({
     name: "",
+    counterparty_kind: "company" as "company" | "government" | "other",
     tax_no: "",
     tax_office: "",
     email: "",
@@ -77,15 +81,17 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
       const { data: c, error: cErr } = await supabase
         .from("customers")
-        .select("id,name,tax_no,tax_office,email,phone,address,created_at")
+        .select("id,name,tax_no,tax_office,email,phone,address,created_at,counterparty_kind")
         .eq("id", id)
         .single();
       if (cErr) throw cErr;
       const cust = c as Customer;
       setCustomer(cust);
       setLogoFailed(false);
+      const k = cust.counterparty_kind;
       setForm({
         name: cust.name ?? "",
+        counterparty_kind: k === "government" || k === "other" ? k : "company",
         tax_no: cust.tax_no ?? "",
         tax_office: cust.tax_office ?? "",
         email: cust.email ?? "",
@@ -158,6 +164,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         .from("customers")
         .update({
           name: form.name.trim(),
+          counterparty_kind: form.counterparty_kind,
           tax_no: form.tax_no.trim() || null,
           tax_office: form.tax_office.trim() || null,
           email: form.email.trim() || null,
@@ -198,7 +205,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   }
 
   if (loading) return <div className="text-sm text-zinc-600">Yükleniyor...</div>;
-  if (!customer) return <div className="text-sm text-zinc-600">Tedarikçi bulunamadı.</div>;
+  if (!customer) return <div className="text-sm text-zinc-600">{t("customerDetail.notFound")}</div>;
 
   return (
     <div>
@@ -218,9 +225,7 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
           ) : null}
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold tracking-tight text-[var(--app-navy)]">{customer.name}</h1>
-            <p className="mt-2 text-sm text-zinc-600">
-              Tedarikçi kartı — bilgi alanları boşsa gösterilmez (aşağıda).
-            </p>
+            <p className="mt-2 text-sm text-zinc-600">{t("customers.subtitle")}</p>
           </div>
         </div>
         <a className="rounded-xl border border-[var(--app-border)] bg-white px-4 py-2 text-sm" href="/app/customers">
@@ -261,7 +266,21 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
           <div className="mt-4 grid gap-3">
             <div>
-              <label className="text-sm font-medium">Firma unvanı</label>
+              <label className="text-sm font-medium">{t("customerDetail.kind")}</label>
+              <select
+                className="mt-1 w-full rounded-xl border border-[var(--app-border)] px-3 py-2 outline-none focus:ring-2 focus:ring-[var(--app-navy)]"
+                value={form.counterparty_kind}
+                onChange={(e) =>
+                  setForm({ ...form, counterparty_kind: e.target.value as "company" | "government" | "other" })
+                }
+              >
+                <option value="company">{t("customerDetail.kindCompany")}</option>
+                <option value="government">{t("customerDetail.kindGovernment")}</option>
+                <option value="other">{t("customerDetail.kindOther")}</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium">{t("customerDetail.company")}</label>
               <input
                 className="mt-1 w-full rounded-xl border border-[var(--app-border)] px-3 py-2 outline-none focus:ring-2 focus:ring-[var(--app-navy)]"
                 value={form.name}

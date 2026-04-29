@@ -15,6 +15,7 @@ type InvoiceRow = {
   total: number;
   notes: string | null;
   created_at: string;
+  paid_at: string | null;
   customer: { id: string; name: string } | null;
   document: { id: string; storage_bucket: string; storage_path: string; original_filename: string | null } | null;
 };
@@ -54,7 +55,7 @@ export default function InvoicesListPage() {
         .from("invoices")
         .select(
           `
-          id,issue_date,invoice_no,currency,subtotal,vat_total,total,notes,created_at,
+          id,issue_date,invoice_no,currency,subtotal,vat_total,total,notes,created_at,paid_at,
           customer:customers(id,name),
           document:documents(id,storage_bucket,storage_path,original_filename)
         `,
@@ -130,6 +131,20 @@ export default function InvoicesListPage() {
       window.open(signedUrl, "_blank", "noopener,noreferrer");
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : t("common.error"));
+    }
+  }
+
+  async function setInvoicePaid(id: string, paid: boolean) {
+    if (!supabase) return;
+    try {
+      const { error: uErr } = await supabase
+        .from("invoices")
+        .update({ paid_at: paid ? new Date().toISOString() : null })
+        .eq("id", id);
+      if (uErr) throw uErr;
+      await load();
+    } catch {
+      setError(t("common.error"));
     }
   }
 
@@ -245,6 +260,9 @@ export default function InvoicesListPage() {
                   <div className="mt-1 text-xs text-zinc-500">
                     {r.invoice_no ? `${t("upload.invoiceNo")}: ${r.invoice_no}` : t("invoices.noNum")}
                     {r.vat_total != null ? ` · ${t("upload.vat")}: ${r.vat_total} ${r.currency}` : ""}
+                    {!r.paid_at ? (
+                      <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">{t("invoices.unpaidHint")}</span>
+                    ) : null}
                     <span className="ml-2 text-zinc-400">
                       {t("invoices.uploaded")}: {new Date(r.created_at).toLocaleString(dateLoc)}
                     </span>
@@ -257,6 +275,18 @@ export default function InvoicesListPage() {
                     {r.total} {r.currency}
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <label
+                      className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--app-border)] bg-white px-3 py-1 text-xs hover:bg-slate-50"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(r.paid_at)}
+                        onChange={() => void setInvoicePaid(r.id, !r.paid_at)}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      {t("invoices.paid")}
+                    </label>
                     <a
                       className="rounded-lg border border-[var(--app-border)] bg-white px-3 py-1 text-xs hover:bg-slate-50"
                       href={`/app/invoices/${r.id}`}

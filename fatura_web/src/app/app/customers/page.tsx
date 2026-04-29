@@ -9,6 +9,7 @@ type CustomerRow = {
   name: string;
   tax_no: string | null;
   created_at: string;
+  counterparty_kind: "company" | "government" | "other" | null;
 };
 
 export default function CustomersPage() {
@@ -17,6 +18,7 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [name, setName] = useState("");
   const [taxNo, setTaxNo] = useState("");
+  const [kind, setKind] = useState<"company" | "government" | "other">("company");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -37,7 +39,7 @@ export default function CustomersPage() {
 
       const { data, error: qErr } = await supabase
         .from("customers")
-        .select("id,name,tax_no,created_at")
+        .select("id,name,tax_no,created_at,counterparty_kind")
         .order("created_at", { ascending: false });
       if (qErr) throw qErr;
       setCustomers((data ?? []) as CustomerRow[]);
@@ -69,11 +71,13 @@ export default function CustomersPage() {
         user_id: userId,
         name: name.trim(),
         tax_no: taxNo.trim() || null,
+        counterparty_kind: kind,
       });
       if (insErr) throw insErr;
 
       setName("");
       setTaxNo("");
+      setKind("company");
       await load();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : t("common.error"));
@@ -106,6 +110,12 @@ export default function CustomersPage() {
     }
   }
 
+  function kindLabel(k: string | null | undefined): string {
+    if (k === "government") return t("customers.kindGovernment");
+    if (k === "other") return t("customers.kindOther");
+    return t("customers.kindCompany");
+  }
+
   return (
     <div>
       <div className="flex items-end justify-between gap-4">
@@ -117,8 +127,20 @@ export default function CustomersPage() {
 
       <form
         onSubmit={addCustomer}
-        className="mt-6 grid gap-3 rounded-2xl border border-[var(--app-border)] bg-white p-5 md:grid-cols-3"
+        className="mt-6 grid gap-3 rounded-2xl border border-[var(--app-border)] bg-white p-5 md:grid-cols-4"
       >
+        <div>
+          <label className="text-sm font-medium">{t("customers.kind")}</label>
+          <select
+            className="mt-1 w-full rounded-xl border border-[var(--app-border)] px-3 py-2 outline-none focus:ring-2 focus:ring-[var(--app-navy)]"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as "company" | "government" | "other")}
+          >
+            <option value="company">{t("customers.kindCompany")}</option>
+            <option value="government">{t("customers.kindGovernment")}</option>
+            <option value="other">{t("customers.kindOther")}</option>
+          </select>
+        </div>
         <div className="md:col-span-2">
           <label className="text-sm font-medium">{t("customers.name")}</label>
           <input
@@ -136,7 +158,7 @@ export default function CustomersPage() {
             onChange={(e) => setTaxNo(e.target.value)}
           />
         </div>
-        <div className="md:col-span-3">
+        <div className="md:col-span-4">
           <button
             className="rounded-xl bg-[var(--app-navy)] px-4 py-2 text-sm font-medium text-white"
             type="submit"
@@ -161,7 +183,10 @@ export default function CustomersPage() {
                   <a className="font-medium text-[var(--app-navy)] hover:underline" href={`/app/customers/${c.id}`}>
                     {c.name}
                   </a>
-                  <div className="mt-1 text-xs text-zinc-500">{c.tax_no ?? "—"}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-zinc-700">{kindLabel(c.counterparty_kind)}</span>
+                    <span>{c.tax_no ?? "—"}</span>
+                  </div>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-xs text-zinc-500">{new Date(c.created_at).toLocaleString(dateLoc)}</span>

@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Fatura Takip — Tedarikçi ve KDV özeti",
-  description: "Gelen faturaları yükleyin, KDV ve harcamayı tedarikçi bazında takip edin.",
+  title: "Fatura Takip — Muhataplar, KDV ve resmî yazılar",
+  description: "Gelen faturalar ve resmî yazıları yükleyin; KDV ve son tarihleri takip edin.",
 };
 
 export default function RootLayout({

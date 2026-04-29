@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
+import { useI18n } from "@/lib/i18n/LocaleContext";
 
 type CustomerRow = { id: string; name: string };
 
@@ -19,8 +20,10 @@ export default function EditInvoicePage() {
   const params = useParams();
   const router = useRouter();
   const invoiceId = String(params.id ?? "");
+  const { t } = useI18n();
 
   const supabase = useMemo(() => createSupabaseBrowserClientSafe(), []);
+  const [paid, setPaid] = useState(false);
 
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [customerId, setCustomerId] = useState("");
@@ -69,7 +72,7 @@ export default function EditInvoicePage() {
 
         const { data: inv, error: invErr } = await supabase
           .from("invoices")
-          .select("id,customer_id,issue_date,invoice_no,currency,subtotal,vat_total,total,notes")
+          .select("id,customer_id,issue_date,invoice_no,currency,subtotal,vat_total,total,notes,paid_at")
           .eq("id", invoiceId)
           .eq("user_id", uid)
           .single();
@@ -85,6 +88,7 @@ export default function EditInvoicePage() {
         setVatTotal(numToStr(row.vat_total));
         setTotal(numToStr(row.total));
         setNotes(row.notes ?? "");
+        setPaid(Boolean(row.paid_at));
 
         const { data: lines, error: liErr } = await supabase
           .from("invoice_items")
@@ -124,7 +128,7 @@ export default function EditInvoicePage() {
         window.location.href = "/login";
         return;
       }
-      if (!customerId) throw new Error("Tedarikçi seçmelisin.");
+      if (!customerId) throw new Error(t("invoiceEdit.needCounterparty"));
       if (!issueDate) throw new Error("Tarih gerekli.");
       const totalNum = toNumberOrNull(total);
       if (totalNum == null) throw new Error("Toplam tutar geçersiz.");
@@ -143,6 +147,7 @@ export default function EditInvoicePage() {
           vat_total: vatNum != null ? Number(vatNum.toFixed(2)) : null,
           total: Number(totalNum.toFixed(2)),
           notes: notes.trim() || null,
+          paid_at: paid ? new Date().toISOString() : null,
         })
         .eq("id", invoiceId)
         .eq("user_id", user.id);
@@ -196,8 +201,15 @@ export default function EditInvoicePage() {
       {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
 
       <form onSubmit={save} className="mt-6 grid max-w-3xl gap-4 rounded-2xl border bg-white p-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} />
+            {t("invoiceEdit.markPaid")}
+          </label>
+        </div>
+
         <div>
-          <label className="text-sm font-medium">Tedarikçi (Lieferant)</label>
+          <label className="text-sm font-medium">{t("invoiceEdit.supplier")}</label>
           <select
             className="mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring"
             value={customerId}

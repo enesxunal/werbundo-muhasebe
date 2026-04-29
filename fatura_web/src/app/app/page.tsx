@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClientSafe, getSupabasePublicEnv } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n/LocaleContext";
+import Link from "next/link";
 import { dictionaries, translate, type Locale } from "@/lib/i18n/dictionaries";
 
 type MonthBucket = {
@@ -67,6 +68,14 @@ export default function DashboardPage() {
   const [excludedOtherCurrencyCount, setExcludedOtherCurrencyCount] = useState<number | null>(null);
   const [topCustomers, setTopCustomers] = useState<TopRow[]>([]);
   const [topCategories, setTopCategories] = useState<TopRow[]>([]);
+  const [reminderLoading, setReminderLoading] = useState(false);
+  const [reminderErr, setReminderErr] = useState<string | null>(null);
+  const [unpaidInvoices, setUnpaidInvoices] = useState<
+    { id: string; days: number; label: string; total: number; currency: string }[]
+  >([]);
+  const [dueLetters, setDueLetters] = useState<
+    { id: string; days: number; label: string; summary: string | null }[]
+  >([]);
 
   useEffect(() => {
     (async () => {
@@ -206,6 +215,86 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [env.ok, supabase, locale]);
 
+  useEffect(() => {
+    (async () => {
+      setReminderErr(null);
+      setUnpaidInvoices([]);
+      setDueLetters([]);
+      if (!env.ok || !supabase) return;
+      setReminderLoading(true);
+      try {
+        const { data: u } = await supabase.auth.getUser();
+        if (!u.user) return;
+
+        const today = new Date();
+        today.setHours(12, 0, 0, 0);
+
+        const { data: invData, error: invErr } = await supabase
+          .from("invoices")
+          .select("id,issue_date,total,currency,customer:customers(name)")
+          .is("paid_at", null)
+          .order("issue_date", { ascending: true });
+        if (invErr) throw invErr;
+
+        const invRows = (invData ?? []) as unknown as {
+          id: string;
+          issue_date: string;
+          total: number;
+          currency: string;
+          customer: { name: string } | null;
+        }[];
+
+        const unpaid = invRows
+          .map((r) => {
+            const d = new Date(String(r.issue_date) + "T12:00:00");
+            const days = Math.floor((today.getTime() - d.getTime()) / (24 * 3600 * 1000));
+            const label = String(r.customer?.name ?? "").trim() || translate(dictionaries[locale], "invoices.supplier");
+            return {
+              id: r.id,
+              days,
+              label,
+              total: asNumber(r.total),
+              currency: String(r.currency ?? "EUR"),
+            };
+          })
+          .sort((a, b) => b.days - a.days);
+        setUnpaidInvoices(unpaid.slice(0, 8));
+
+        const { data: corrData, error: corrErr } = await supabase
+          .from("correspondence")
+          .select("id,deadline_date,summary,issuer_name,customer:customers(name)")
+          .is("completed_at", null)
+          .not("deadline_date", "is", null)
+          .order("deadline_date", { ascending: true });
+        if (corrErr) throw corrErr;
+
+        const letters = (corrData ?? []) as unknown as {
+          id: string;
+          deadline_date: string;
+          summary: string | null;
+          issuer_name: string | null;
+          customer: { name: string } | null;
+        }[];
+
+        const due = letters
+          .map((r) => {
+            const dl = new Date(r.deadline_date + "T12:00:00");
+            const days = Math.floor((dl.getTime() - today.getTime()) / (24 * 3600 * 1000));
+            const label =
+              String(r.customer?.name ?? "").trim() || String(r.issuer_name ?? "").trim() || "—";
+            return { id: r.id, days, label, summary: r.summary };
+          })
+          .filter((x) => x.days <= 14);
+        setDueLetters(due.slice(0, 8));
+      } catch (e: unknown) {
+        setReminderErr(e instanceof Error ? e.message : translate(dictionaries[locale], "dashboard.statsErr"));
+      } finally {
+        setReminderLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [env.ok, supabase, locale]);
+
   const currencyFmt = useMemo(() => {
     try {
       return new Intl.NumberFormat(locale === "de" ? "de-DE" : "tr-TR", {
@@ -274,6 +363,71 @@ export default function DashboardPage() {
           {statsError}
         </div>
       ) : null}
+
+      <div className="mt-8 rounded-2xl border border-[var(--app-border)] bg-white p-5">
+        <p className="text-sm font-medium text-[var(--app-navy)]">{t("dashboard.remindersTitle")}</p>
+        <p className="mt-1 text-xs text-zinc-500">{t("dashboard.remindersSub")}</p>
+        {reminderErr ? (
+          <p className="mt-3 text-sm text-amber-800">
+            {reminderErr}{" "}
+            <span className="text-zinc-600">
+              (Veritabanında “paid_at” veya “correspondence” yoksa Supabase’de migration_v2.sql çalıştırın.)
+            </span>
+          </p>
+        ) : null}
+        {reminderLoading ? (
+          <p className="mt-4 text-sm text-zinc-600">{t("dashboard.loading")}</p>
+        ) : (
+          <div className="mt-4 grid gap-6 md:grid-cols-2">
+            <div>
+              <p className="text-xs font-medium text-zinc-600">{t("dashboard.unpaidInvoices")}</p>
+              <div className="mt-2 grid gap-2">
+                {unpaidInvoices.length === 0 ? (
+                  <p className="text-sm text-zinc-600">{t("dashboard.noUnpaid")}</p>
+                ) : (
+                  unpaidInvoices.map((r) => (
+                    <Link
+                      key={r.id}
+                      href={`/app/invoices/${r.id}`}
+                      className="flex items-start justify-between gap-3 rounded-xl border border-[var(--app-border)] px-3 py-2 text-sm hover:bg-slate-50"
+                    >
+                      <span className="min-w-0 text-zinc-800">
+                        {r.label} · {r.total.toFixed(2)} {r.currency}
+                      </span>
+                      <span className="shrink-0 text-xs text-amber-800">
+                        {t("dashboard.daysSinceInvoice").replace("{n}", String(r.days))}
+                      </span>
+                    </Link>
+                  ))
+                )}
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-zinc-600">{t("dashboard.dueLetters")}</p>
+              <div className="mt-2 grid gap-2">
+                {dueLetters.length === 0 ? (
+                  <p className="text-sm text-zinc-600">{t("dashboard.noDueSoon")}</p>
+                ) : (
+                  dueLetters.map((r) => (
+                    <Link
+                      key={r.id}
+                      href={`/app/correspondence/${r.id}`}
+                      className="flex items-start justify-between gap-3 rounded-xl border border-[var(--app-border)] px-3 py-2 text-sm hover:bg-slate-50"
+                    >
+                      <span className="min-w-0 text-zinc-800">{r.label}</span>
+                      <span className={`shrink-0 text-xs ${r.days < 0 ? "text-red-700" : "text-amber-800"}`}>
+                        {r.days < 0
+                          ? t("dashboard.overdueLetter").replace("{n}", String(Math.abs(r.days)))
+                          : t("dashboard.daysLeftLetter").replace("{n}", String(r.days))}
+                      </span>
+                    </Link>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
       {excludedOtherCurrencyCount && excludedOtherCurrencyCount > 0 ? (
         <div className="mt-4 rounded-2xl border border-[var(--app-border)] bg-white px-4 py-3 text-sm text-zinc-700">
           {t("dashboard.eurOnlyNote")}{" "}
