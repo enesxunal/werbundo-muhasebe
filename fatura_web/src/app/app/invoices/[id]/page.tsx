@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n/LocaleContext";
@@ -14,6 +15,27 @@ type ItemRow = {
   unit: string;
   unitPrice: string;
   lineTotal: string;
+};
+
+type InvoiceDbRow = {
+  customer_id: string;
+  issue_date: string;
+  invoice_no: string | null;
+  currency: string;
+  subtotal: number | null;
+  vat_total: number | null;
+  total: number;
+  notes: string | null;
+  paid_at: string | null;
+};
+
+type LineDbRow = {
+  line_no: number | null;
+  description: string;
+  quantity: number | null;
+  unit: string | null;
+  unit_price: number | null;
+  line_total: number | null;
 };
 
 export default function EditInvoicePage() {
@@ -79,7 +101,7 @@ export default function EditInvoicePage() {
         if (invErr) throw invErr;
         if (!inv) throw new Error("Fatura bulunamadı.");
 
-        const row = inv as any;
+        const row = inv as InvoiceDbRow;
         setCustomerId(String(row.customer_id ?? ""));
         setIssueDate(String(row.issue_date ?? "").slice(0, 10));
         setInvoiceNo(row.invoice_no ?? "");
@@ -99,17 +121,20 @@ export default function EditInvoicePage() {
         if (liErr) throw liErr;
 
         setItems(
-          (lines ?? []).map((it: any) => ({
-            line_no: typeof it.line_no === "number" ? it.line_no : null,
-            description: String(it.description ?? ""),
-            quantity: it.quantity != null ? String(it.quantity) : "",
-            unit: String(it.unit ?? ""),
-            unitPrice: numToStr(it.unit_price),
-            lineTotal: numToStr(it.line_total),
-          })),
+          (lines ?? []).map((it) => {
+            const li = it as LineDbRow;
+            return {
+              line_no: typeof li.line_no === "number" ? li.line_no : null,
+              description: String(li.description ?? ""),
+              quantity: li.quantity != null ? String(li.quantity) : "",
+              unit: String(li.unit ?? ""),
+              unitPrice: numToStr(li.unit_price),
+              lineTotal: numToStr(li.line_total),
+            };
+          }),
         );
-      } catch (err: any) {
-        setError(err?.message ?? "Yüklenemedi.");
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Yüklenemedi.");
       } finally {
         setLoading(false);
       }
@@ -175,8 +200,8 @@ export default function EditInvoicePage() {
       }
 
       router.push("/app/invoices");
-    } catch (err: any) {
-      setError(err?.message ?? "Kaydedilemedi.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Kaydedilemedi.");
     } finally {
       setSaving(false);
     }
@@ -193,9 +218,9 @@ export default function EditInvoicePage() {
           <h1 className="text-2xl font-semibold tracking-tight">Fatura Düzenle</h1>
           <p className="mt-2 text-sm text-zinc-600">Yanlışlık varsa düzeltip kaydet. Kalemler tamamen yeniden yazılır.</p>
         </div>
-        <a className="rounded-xl border bg-white px-4 py-2 text-sm" href="/app/invoices">
+        <Link className="rounded-xl border bg-white px-4 py-2 text-sm" href="/app/invoices">
           Listeye dön
-        </a>
+        </Link>
       </div>
 
       {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
@@ -418,9 +443,9 @@ export default function EditInvoicePage() {
           >
             {saving ? "Kaydediliyor…" : "Kaydet"}
           </button>
-          <a className="rounded-xl border px-5 py-2 text-sm" href="/app/invoices">
+          <Link className="rounded-xl border px-5 py-2 text-sm" href="/app/invoices">
             İptal
-          </a>
+          </Link>
         </div>
       </form>
     </div>

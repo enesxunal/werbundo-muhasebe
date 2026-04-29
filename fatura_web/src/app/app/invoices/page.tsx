@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 import { getSignedDocumentUrl } from "@/lib/upload/documents";
@@ -174,12 +175,12 @@ export default function InvoicesListPage() {
           <h1 className="text-2xl font-semibold tracking-tight text-[var(--app-navy)]">{t("invoices.title")}</h1>
           <p className="mt-2 text-sm text-zinc-600">{t("invoices.subtitle")}</p>
         </div>
-        <a
+        <Link
           className="rounded-xl bg-[var(--app-navy)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--app-navy-muted)]"
           href="/app/invoices/new"
         >
           {t("invoices.addManual")}
-        </a>
+        </Link>
       </div>
 
       {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
@@ -287,12 +288,12 @@ export default function InvoicesListPage() {
                       />
                       {t("invoices.paid")}
                     </label>
-                    <a
+                    <Link
                       className="rounded-lg border border-[var(--app-border)] bg-white px-3 py-1 text-xs hover:bg-slate-50"
                       href={`/app/invoices/${r.id}`}
                     >
                       {t("invoices.edit")}
-                    </a>
+                    </Link>
                     {r.document ? (
                       <button
                         className="rounded-lg border border-[var(--app-border)] px-3 py-1 text-xs hover:bg-slate-50"

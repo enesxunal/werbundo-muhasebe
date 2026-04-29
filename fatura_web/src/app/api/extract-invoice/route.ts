@@ -193,7 +193,7 @@ async function extractWithOpenAI(
     return { ok: false, error: `OpenAI hata: ${resp.status} ${t}` };
   }
 
-  const data = (await resp.json()) as any;
+  const data = (await resp.json()) as { choices?: { message?: { content?: string } }[] };
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content !== "string") {
     return { ok: false, error: "OpenAI cevabı beklenmedik." };
@@ -246,7 +246,9 @@ async function extractWithGemini(
     return { ok: false, error: `Gemini hata: ${resp.status} ${t}` };
   }
 
-  const data = (await resp.json()) as any;
+  const data = (await resp.json()) as {
+    candidates?: { content?: { parts?: { text?: string }[]; text?: string } }[];
+  };
   const respParts = data?.candidates?.[0]?.content?.parts;
   const text =
     Array.isArray(respParts) && typeof respParts[0]?.text === "string"

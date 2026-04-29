@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 import { uploadDocument } from "@/lib/upload/documents";
@@ -46,8 +47,8 @@ export default function NewInvoicePage() {
         const list = (data ?? []) as CustomerRow[];
         setCustomers(list);
         if (!customerId && list[0]?.id) setCustomerId(list[0].id);
-      } catch (err: any) {
-        setError(err?.message ?? "Müşteriler yüklenemedi.");
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : "Müşteriler yüklenemedi.");
       } finally {
         setLoading(false);
       }
@@ -102,8 +103,8 @@ export default function NewInvoicePage() {
 
       setOcrPreview(text.slice(0, 800));
       setOcrProgress({ status: "Tamamlandı", progress: 1 });
-    } catch (err: any) {
-      setError(err?.message ?? "OCR başarısız.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "OCR başarısız.");
       setOcrProgress(null);
     } finally {
       setOcrLoading(false);
@@ -151,8 +152,8 @@ export default function NewInvoicePage() {
       if (insertErr) throw insertErr;
 
       window.location.href = "/app/invoices";
-    } catch (err: any) {
-      setError(err?.message ?? "Kaydedilemedi.");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Kaydedilemedi.");
     } finally {
       setSaving(false);
     }
@@ -171,9 +172,9 @@ export default function NewInvoicePage() {
             Telefondan çekilen fotoğraflar (JPG/PNG/WebP/HEIC) veya PDF yükleyebilir, tutarları girebilirsin.
           </p>
         </div>
-        <a className="rounded-xl border bg-white px-4 py-2 text-sm" href="/app/invoices">
+        <Link className="rounded-xl border bg-white px-4 py-2 text-sm" href="/app/invoices">
           Geri
-        </a>
+        </Link>
       </div>
 
       <form onSubmit={save} className="mt-6 grid gap-4 rounded-2xl border bg-white p-6">
@@ -195,7 +196,11 @@ export default function NewInvoicePage() {
               ))}
             </select>
             <p className="mt-1 text-xs text-zinc-500">
-              Müşteri yoksa önce <a className="underline" href="/app/customers">Müşteriler</a> ekranından ekle.
+              Müşteri yoksa önce{" "}
+              <Link className="underline" href="/app/customers">
+                Müşteriler
+              </Link>{" "}
+              ekranından ekle.
             </p>
           </div>
           <div>

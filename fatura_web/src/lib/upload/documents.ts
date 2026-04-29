@@ -18,7 +18,10 @@ export async function uploadDocument(args: {
     .from("documents")
     .upload(storagePath, file, { upsert: false, contentType: file.type });
   if (uploadErr) {
-    const msg = (uploadErr as any)?.message ?? "Storage upload başarısız.";
+    const msg =
+      uploadErr && typeof uploadErr === "object" && "message" in uploadErr
+        ? String((uploadErr as { message: string }).message)
+        : "Storage upload başarısız.";
     throw new Error(`Storage(Upload) RLS/izin hatası: ${msg}`);
   }
 
@@ -37,7 +40,10 @@ export async function uploadDocument(args: {
     .single();
 
   if (docErr) {
-    const msg = (docErr as any)?.message ?? "documents insert başarısız.";
+    const msg =
+      docErr && typeof docErr === "object" && "message" in docErr
+        ? String((docErr as { message: string }).message)
+        : "documents insert başarısız.";
     throw new Error(`DB(documents) RLS/izin hatası: ${msg}`);
   }
 

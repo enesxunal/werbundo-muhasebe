@@ -44,6 +44,22 @@ function asNumber(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+type InvoiceStatRow = {
+  id?: unknown;
+  issue_date?: unknown;
+  total?: unknown;
+  vat_total?: unknown;
+  currency?: unknown;
+  customer?: { name?: unknown } | null;
+};
+
+type ItemStatRow = {
+  description?: unknown;
+  line_total?: unknown;
+  quantity?: unknown;
+  unit_price?: unknown;
+};
+
 function normalizeCategory(desc: string): string {
   const t = (desc ?? "").toString().trim().replace(/\s+/g, " ");
   if (!t) return "Diğer";
@@ -137,29 +153,29 @@ export default function DashboardPage() {
         const thisMonthIds: string[] = [];
         let excluded = 0;
 
-        for (const r of invRows ?? []) {
-          const issue = new Date(String((r as any).issue_date));
+        for (const r of (invRows ?? []) as InvoiceStatRow[]) {
+          const issue = new Date(String(r.issue_date ?? ""));
           if (Number.isNaN(issue.getTime())) continue;
           const key = monthKey(issue);
           const b = buckets.get(key);
           if (!b) continue;
 
-          const ccy = String((r as any).currency ?? "TRY").toUpperCase();
+          const ccy = String(r.currency ?? "TRY").toUpperCase();
           if (ccy !== DISPLAY_CURRENCY) {
             excluded += 1;
             continue;
           }
 
-          const t = asNumber((r as any).total);
-          const v = asNumber((r as any).vat_total);
+          const t = asNumber(r.total);
+          const v = asNumber(r.vat_total);
           b.total += t;
           b.vatTotal += v;
           b.count += 1;
 
           if (key === thisMonthKey) {
-            const cid = String((r as any).id ?? "");
+            const cid = String(r.id ?? "");
             if (cid) thisMonthIds.push(cid);
-            const custName = String((r as any).customer?.name ?? "").trim() || unkSupplier;
+            const custName = String(r.customer?.name ?? "").trim() || unkSupplier;
             customerAgg.set(custName, (customerAgg.get(custName) ?? 0) + t);
           }
         }
@@ -189,12 +205,12 @@ export default function DashboardPage() {
           if (itemErr) throw itemErr;
 
           const catAgg = new Map<string, number>();
-          for (const it of itemRows ?? []) {
-            const desc = String((it as any).description ?? "");
+          for (const it of (itemRows ?? []) as ItemStatRow[]) {
+            const desc = String(it.description ?? "");
             const cat = normalizeCategory(desc);
-            const lt = asNumber((it as any).line_total);
-            const q = asNumber((it as any).quantity);
-            const up = asNumber((it as any).unit_price);
+            const lt = asNumber(it.line_total);
+            const q = asNumber(it.quantity);
+            const up = asNumber(it.unit_price);
             const amount = lt > 0 ? lt : q > 0 && up > 0 ? q * up : 0;
             if (amount <= 0) continue;
             catAgg.set(cat, (catAgg.get(cat) ?? 0) + amount);
@@ -212,7 +228,6 @@ export default function DashboardPage() {
         setStatsLoading(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [env.ok, supabase, locale]);
 
   useEffect(() => {
@@ -292,7 +307,6 @@ export default function DashboardPage() {
         setReminderLoading(false);
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [env.ok, supabase, locale]);
 
   const currencyFmt = useMemo(() => {

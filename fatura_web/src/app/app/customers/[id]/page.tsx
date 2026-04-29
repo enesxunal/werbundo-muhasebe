@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { use, useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 import { getSignedDocumentUrl } from "@/lib/upload/documents";
@@ -228,9 +229,9 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             <p className="mt-2 text-sm text-zinc-600">{t("customers.subtitle")}</p>
           </div>
         </div>
-        <a className="rounded-xl border border-[var(--app-border)] bg-white px-4 py-2 text-sm" href="/app/customers">
+        <Link className="rounded-xl border border-[var(--app-border)] bg-white px-4 py-2 text-sm" href="/app/customers">
           Liste
-        </a>
+        </Link>
       </div>
 
       {monthSpend.length > 0 ? (

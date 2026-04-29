@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { createSupabaseBrowserClientSafe, getSupabasePublicEnv } from "@/lib/supabase/client";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -135,9 +136,9 @@ export default function LoginPage() {
         {!env.ok ? <p className="mt-8 text-center text-xs text-zinc-500">{t("login.envHint")}</p> : null}
 
         <p className="mt-8 text-center text-sm text-zinc-500">
-          <a className="text-[var(--app-navy)] underline" href="/">
+          <Link className="text-[var(--app-navy)] underline" href="/">
             {t("login.homeLink")}
-          </a>
+          </Link>
         </p>
       </div>
     </div>

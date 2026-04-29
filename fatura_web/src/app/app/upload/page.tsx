@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 import { runInvoiceOcr } from "@/lib/ocr/runOcr";
 import { prepareInvoiceImageForVision } from "@/lib/vision/prepareInvoiceImageForVision";
@@ -103,40 +104,43 @@ export default function UploadPage() {
     return Number.isFinite(n) ? n : undefined;
   }
 
-  function computeWarnings(next: {
-    customerName: string;
-    issueDate: string;
-    subtotal?: number;
-    vatTotal?: number;
-    total?: number;
-    items?: ExtractedItem[];
-  }) {
-    const w: string[] = [];
-    const s = next.subtotal;
-    const v = next.vatTotal;
-    const tot = next.total;
-    if (typeof s === "number" && typeof v === "number" && typeof tot === "number") {
-      const diff = Math.abs((s + v) - tot);
-      if (diff > 0.02)
-        w.push(
-          t("upload.warnTotalMismatch").replace("{a}", (s + v).toFixed(2)).replace("{b}", tot.toFixed(2)),
-        );
-    }
-    if (!next.customerName.trim()) w.push(t("upload.warnSupplierEmpty"));
-    if (!next.issueDate) w.push(t("upload.warnDateEmpty"));
-    if (next.items && next.items.length > 0) {
-      const sum = next.items
-        .map((i) => i.lineTotal)
-        .filter((n): n is number => typeof n === "number")
-        .reduce((a, b) => a + b, 0);
-      if (typeof tot === "number" && sum > 0) {
-        const diff = Math.abs(sum - tot);
-        if (diff > 0.5)
-          w.push(t("upload.warnLinesVsTotal").replace("{sum}", sum.toFixed(2)).replace("{total}", tot.toFixed(2)));
+  const computeWarnings = useCallback(
+    (next: {
+      customerName: string;
+      issueDate: string;
+      subtotal?: number;
+      vatTotal?: number;
+      total?: number;
+      items?: ExtractedItem[];
+    }) => {
+      const w: string[] = [];
+      const s = next.subtotal;
+      const v = next.vatTotal;
+      const tot = next.total;
+      if (typeof s === "number" && typeof v === "number" && typeof tot === "number") {
+        const diff = Math.abs((s + v) - tot);
+        if (diff > 0.02)
+          w.push(
+            t("upload.warnTotalMismatch").replace("{a}", (s + v).toFixed(2)).replace("{b}", tot.toFixed(2)),
+          );
       }
-    }
-    return w;
-  }
+      if (!next.customerName.trim()) w.push(t("upload.warnSupplierEmpty"));
+      if (!next.issueDate) w.push(t("upload.warnDateEmpty"));
+      if (next.items && next.items.length > 0) {
+        const sum = next.items
+          .map((i) => i.lineTotal)
+          .filter((n): n is number => typeof n === "number")
+          .reduce((a, b) => a + b, 0);
+        if (typeof tot === "number" && sum > 0) {
+          const diff = Math.abs(sum - tot);
+          if (diff > 0.5)
+            w.push(t("upload.warnLinesVsTotal").replace("{sum}", sum.toFixed(2)).replace("{total}", tot.toFixed(2)));
+        }
+      }
+      return w;
+    },
+    [t],
+  );
 
   useEffect(() => {
     if (!reviewOpen) return;
@@ -153,7 +157,7 @@ export default function UploadPage() {
         items,
       }),
     );
-  }, [reviewOpen, customerName, issueDate, subtotal, vatTotal, total, items, t]);
+  }, [reviewOpen, customerName, issueDate, subtotal, vatTotal, total, items, computeWarnings]);
 
   async function callExtractInvoice(
     text: string,
@@ -636,8 +640,8 @@ export default function UploadPage() {
           return;
         }
         if (aliveRef.current) setProgress(null);
-      } catch (err: any) {
-        const msg = err?.message ?? t("upload.processFailed");
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : t("upload.processFailed");
         setInvoiceJob({
           status: "error",
           error: msg,
@@ -736,12 +740,12 @@ export default function UploadPage() {
           <p className="mt-2 text-sm text-zinc-600">{t("upload.intro")}</p>
         </div>
         <div className="flex gap-2">
-          <a className="rounded-xl border border-[var(--app-border)] bg-white px-4 py-2 text-sm" href="/app/invoices">
+          <Link className="rounded-xl border border-[var(--app-border)] bg-white px-4 py-2 text-sm" href="/app/invoices">
             {t("nav.invoices")}
-          </a>
-          <a className="rounded-xl border border-[var(--app-border)] bg-white px-4 py-2 text-sm" href="/app/customers">
+          </Link>
+          <Link className="rounded-xl border border-[var(--app-border)] bg-white px-4 py-2 text-sm" href="/app/customers">
             {t("nav.suppliers")}
-          </a>
+          </Link>
         </div>
       </div>
 
@@ -888,7 +892,7 @@ export default function UploadPage() {
                 <select
                   className="mt-1 w-full rounded-xl border bg-white px-3 py-2 outline-none focus:ring"
                   value={currency}
-                  onChange={(e) => setCurrency(e.target.value as any)}
+                  onChange={(e) => setCurrency(e.target.value as "TRY" | "USD" | "EUR")}
                 >
                   <option value="TRY">TRY</option>
                   <option value="EUR">EUR</option>
@@ -1048,13 +1052,13 @@ export default function UploadPage() {
 
         <div className="rounded-xl border bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
           {t("upload.footerLinksHtml")}{" "}
-          <a className="underline" href="/app/invoices">
+          <Link className="underline" href="/app/invoices">
             {t("nav.invoices")}
-          </a>{" "}
+          </Link>{" "}
           ·{" "}
-          <a className="underline" href="/app/customers">
+          <Link className="underline" href="/app/customers">
             {t("nav.suppliers")}
-          </a>
+          </Link>
         </div>
       </div>
     </div>
