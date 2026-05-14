@@ -114,6 +114,14 @@ export const tr: MessageTree = {
     homeLink: "Ana sayfa",
     envHint: "Bağlantı için proje klasöründe `.env.local` oluşturup Supabase bilgilerini ekleyin.",
     registerOk: "Kayıt oluşturuldu. E-posta doğrulaması gerekiyorsa gelen kutunu kontrol et.",
+    registerOkSignIn: "Üyeliğiniz oluşturuldu. «Giriş» sekmesinden aynı e-posta ve şifreyle giriş yapın.",
+    tabRegister: "Üye ol",
+    passwordTooShort: "Şifre en az 6 karakter olmalı (Supabase kuralı).",
+    passwordMinHint: "En az 6 karakter.",
+    registerFootnote: "Şimdilik yalnızca e-posta ve şifre yeterli; ek güvenlik adımlarını sonra ekleyebilirsiniz.",
+    networkError:
+      "Sunucuya bağlanılamadı. Supabase adresi yanlış veya silinmiş bir proje olabilir; Vercel’de NEXT_PUBLIC_SUPABASE_URL / ANON_KEY tanımlı mı kontrol edin. Supabase → Project Settings → API bölümünden güncel değerleri alın.",
+    genericFail: "İşlem başarısız.",
   },
   job: {
     runningTitle: "Fatura işleniyor",
@@ -531,6 +539,14 @@ export const de: MessageTree = {
     homeLink: "Startseite",
     envHint: "Bitte `.env.local` im Projekt mit Supabase-Daten anlegen.",
     registerOk: "Konto erstellt. Bei E-Mail-Bestätigung Postfach prüfen.",
+    registerOkSignIn: "Konto erstellt. Melden Sie sich unter «Anmeldung» mit derselben E-Mail und dem Passwort an.",
+    tabRegister: "Registrieren",
+    passwordTooShort: "Passwort mindestens 6 Zeichen (Supabase-Regel).",
+    passwordMinHint: "Mind. 6 Zeichen.",
+    registerFootnote: "Vorerst reichen E-Mail und Passwort; weitere Sicherheitsschritte können später ergänzt werden.",
+    networkError:
+      "Keine Verbindung zum Server. Supabase-URL falsch oder Projekt gelöscht? Prüfen Sie NEXT_PUBLIC_SUPABASE_URL / ANON_KEY in Vercel. Aktuelle Werte unter Supabase → Project Settings → API.",
+    genericFail: "Vorgang fehlgeschlagen.",
   },
   job: {
     runningTitle: "Rechnung wird verarbeitet",
