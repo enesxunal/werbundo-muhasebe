@@ -1,5 +1,7 @@
 import { assertSupportedDocumentFile } from "@/lib/document/acceptedTypes";
 import { canvasToJpegBlob, canvasToJpegFile, fileToSourceCanvas } from "@/lib/document/fileToCanvas";
+import { rotateCanvas90 } from "@/lib/document/rotateCanvas";
+import { blobToCanvas } from "@/lib/document/blobToCanvas";
 import { hasGoodContentSpread } from "@/lib/document/validateScanResult";
 
 export type PreparedDocument = {
@@ -64,6 +66,15 @@ export async function applyManualScanResult(
 export function acceptOriginalDocument(prepared: PreparedDocument): PreparedDocument {
   revokePreparedPreview(prepared);
   return { ...prepared, scanApplied: true };
+}
+
+/** Önizlemeyi 90° döndür (yanlış yön düzeltmesi) */
+export async function rotatePreparedDocument(
+  prepared: PreparedDocument,
+  direction: "cw" | "ccw",
+): Promise<PreparedDocument> {
+  const canvas = await blobToCanvas(prepared.processedBlob);
+  return applyManualScanResult(prepared, rotateCanvas90(canvas, direction));
 }
 
 export function revokePreparedPreview(prepared: PreparedDocument | null) {

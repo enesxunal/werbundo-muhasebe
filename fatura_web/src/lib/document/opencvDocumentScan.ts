@@ -144,19 +144,19 @@ function findBestQuad(cv: Cv, gray: Cv, fullW: number, fullH: number, scaleToFul
   return best;
 }
 
-/** Elle ayarlanan köşeler — opencv-document-scanner crop */
+/** Elle ayarlanan köşeler — perspektif düzeltme + dikey hizalama */
 export async function warpDocumentFromPoints(
   source: HTMLCanvasElement,
   pts: Point[],
 ): Promise<HTMLCanvasElement | null> {
   try {
     await ensureOpenCvLoaded();
-    const ordered = orderQuadPoints(pts);
-    const { DocumentScanner } = await import("opencv-document-scanner");
-    const scanner = new DocumentScanner();
-    const cropped = scanner.crop(source, ordered);
-    if (!cropped || cropped.width < 32) return null;
-    return cropped;
+    const cv = (typeof window !== "undefined" ? window.cv : null) as Cv | undefined;
+    if (!cv?.imread) return null;
+    const warped = warpDocument(cv, source, pts);
+    if (!warped || warped.width < 32) return null;
+    const { orientReceiptPortrait } = await import("@/lib/document/rotateCanvas");
+    return orientReceiptPortrait(warped);
   } catch {
     return null;
   }

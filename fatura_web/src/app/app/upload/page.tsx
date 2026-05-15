@@ -9,6 +9,7 @@ import {
   applyManualScanResult,
   prepareDocumentFiles,
   revokePreparedPreview,
+  rotatePreparedDocument,
   type PreparedDocument,
 } from "@/lib/document/prepareDocumentFiles";
 import { DocumentCornerEditor } from "@/components/DocumentCornerEditor";
@@ -833,11 +834,37 @@ export default function UploadPage() {
             <p className={`mt-1 text-xs ${scanOk ? "text-emerald-700" : "text-amber-800"}`}>{scanNote}</p>
           ) : null}
           {prepared?.previewUrl && prepared.scanApplied && !manualCornerOpen ? (
-            <img
-              src={prepared.previewUrl}
-              alt=""
-              className="mt-3 max-h-64 w-full rounded-xl border object-contain"
-            />
+            <div className="mt-3">
+              <img
+                src={prepared.previewUrl}
+                alt=""
+                className="max-h-64 w-full rounded-xl border object-contain"
+              />
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-[var(--app-border)] bg-white px-3 py-1.5 text-xs font-medium"
+                  onClick={() => {
+                    void rotatePreparedDocument(prepared, "ccw").then((next) => {
+                      setPreparedDoc(next);
+                    });
+                  }}
+                >
+                  {t("doc.rotateCcw")}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-lg border border-[var(--app-border)] bg-white px-3 py-1.5 text-xs font-medium"
+                  onClick={() => {
+                    void rotatePreparedDocument(prepared, "cw").then((next) => {
+                      setPreparedDoc(next);
+                    });
+                  }}
+                >
+                  {t("doc.rotateCw")}
+                </button>
+              </div>
+            </div>
           ) : null}
           {prepared && !preparingDoc && !manualCornerOpen ? (
             <button
