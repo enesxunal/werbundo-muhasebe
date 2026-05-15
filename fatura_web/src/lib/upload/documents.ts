@@ -3,7 +3,7 @@ import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 export async function uploadDocument(args: {
   file: File;
   userId: string;
-  docType: "invoice" | "payment_receipt" | "correspondence";
+  docType: "invoice" | "payment_receipt" | "correspondence" | "bank_statement";
   /** Klasik tarama ile düzeltilmiş JPEG (AI değil) */
   processedBlob?: Blob | null;
 }) {
