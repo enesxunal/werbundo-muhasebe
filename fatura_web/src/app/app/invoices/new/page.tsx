@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
+import { DOCUMENT_FILE_ACCEPT } from "@/lib/document/acceptedTypes";
+import { prepareDocumentFiles } from "@/lib/document/prepareDocumentFiles";
 import { uploadDocument } from "@/lib/upload/documents";
 import { runInvoiceOcr } from "@/lib/ocr/runOcr";
 
@@ -83,8 +85,9 @@ export default function NewInvoicePage() {
     setOcrProgress({ status: "Başlıyor", progress: 0 });
     setOcrPreview(null);
     try {
+      const prep = await prepareDocumentFiles(file);
       const { extracted, text } = await runInvoiceOcr({
-        file,
+        file: prep.workFile,
         onProgress: (p) => setOcrProgress(p),
       });
 
@@ -132,7 +135,13 @@ export default function NewInvoicePage() {
 
       let documentId: string | null = null;
       if (file) {
-        const doc = await uploadDocument({ file, userId: user.id, docType: "invoice" });
+        const prep = await prepareDocumentFiles(file);
+        const doc = await uploadDocument({
+          file: prep.originalFile,
+          userId: user.id,
+          docType: "invoice",
+          processedBlob: prep.processedBlob,
+        });
         documentId = doc.id;
       }
 
@@ -242,7 +251,7 @@ export default function NewInvoicePage() {
             <input
               className="mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring"
               type="file"
-              accept="image/*,.pdf,.png,.jpg,.jpeg,.webp,.heic,.heif"
+              accept={DOCUMENT_FILE_ACCEPT}
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
             <p className="mt-1 text-xs text-zinc-500">

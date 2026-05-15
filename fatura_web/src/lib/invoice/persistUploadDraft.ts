@@ -146,11 +146,12 @@ export async function persistUploadDraft(args: {
   supabase: SupabaseClient;
   userId: string;
   file: File;
+  processedBlob?: Blob | null;
   draft: UploadInvoiceDraft;
   aiApplied: boolean;
   aiConfidence: number | null;
 }): Promise<{ invoiceId: string }> {
-  const { supabase, userId, file, draft, aiApplied, aiConfidence } = args;
+  const { supabase, userId, file, processedBlob, draft, aiApplied, aiConfidence } = args;
 
   const totalNum = toNum(draft.total);
   if (typeof totalNum !== "number") throw new Error("Toplam tutar gerekli.");
@@ -164,7 +165,7 @@ export async function persistUploadDraft(args: {
   }
 
   const customerId = await resolveCustomerId(supabase, userId, draft);
-  const doc = await uploadDocument({ file, userId, docType: "invoice" });
+  const doc = await uploadDocument({ file, userId, docType: "invoice", processedBlob: processedBlob ?? null });
 
   const subNum = toNum(draft.subtotal);
   const vatNum = toNum(draft.vatTotal);

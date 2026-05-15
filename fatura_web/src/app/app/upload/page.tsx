@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 import { runInvoiceOcr } from "@/lib/ocr/runOcr";
+import { prepareDocumentFiles, revokePreparedPreview, type PreparedDocument } from "@/lib/document/prepareDocumentFiles";
+import { DOCUMENT_FILE_ACCEPT } from "@/lib/document/acceptedTypes";
 import { prepareInvoiceImageForVision } from "@/lib/vision/prepareInvoiceImageForVision";
 import { appendImportHistory } from "@/lib/invoice/importHistoryStore";
 import { DuplicateInvoiceError, persistUploadDraft, type UploadInvoiceDraft } from "@/lib/invoice/persistUploadDraft";
@@ -60,6 +62,9 @@ export default function UploadPage() {
   const { t } = useI18n();
 
   const [file, setFile] = useState<File | null>(null);
+  const preparedRef = useRef<PreparedDocument | null>(null);
+  const [preparingDoc, setPreparingDoc] = useState(false);
+  const [scanNote, setScanNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ status: string; progress: number } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -93,6 +98,37 @@ export default function UploadPage() {
       aliveRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!file) {
+      revokePreparedPreview(preparedRef.current);
+      preparedRef.current = null;
+      setScanNote(null);
+      return;
+    }
+    let cancelled = false;
+    setPreparingDoc(true);
+    setScanNote(null);
+    void prepareDocumentFiles(file).then(
+      (prep) => {
+        if (cancelled) {
+          revokePreparedPreview(prep);
+          return;
+        }
+        revokePreparedPreview(preparedRef.current);
+        preparedRef.current = prep;
+        setScanNote(prep.scanApplied ? t("doc.scanOk") : t("doc.scanFallback"));
+      },
+      (err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : t("common.error"));
+      },
+    ).finally(() => {
+      if (!cancelled) setPreparingDoc(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [file, t]);
 
   const backgroundRunning =
     useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)?.status === "running";
@@ -395,7 +431,17 @@ export default function UploadPage() {
         if (aliveRef.current) {
           setProgress({ status: t("job.step.prepare"), progress: 0.08 });
         }
-        const visionPayload = await prepareInvoiceImageForVision(currentFile);
+        let prep = preparedRef.current;
+        if (!prep) {
+          prep = await prepareDocumentFiles(currentFile);
+          preparedRef.current = prep;
+          if (aliveRef.current) {
+            setScanNote(prep.scanApplied ? t("doc.scanOk") : t("doc.scanFallback"));
+          }
+        }
+        const workFile = prep.workFile;
+
+        const visionPayload = await prepareInvoiceImageForVision(workFile);
 
         if (visionPayload) {
           ocrTextForApi = "";
@@ -408,7 +454,7 @@ export default function UploadPage() {
             setProgress({ status: t("job.step.ocr"), progress: 0.12 });
           }
           const { extracted, text } = await runInvoiceOcr({
-            file: currentFile,
+            file: workFile,
             onProgress: (p) => {
               updateJobRunning(p.status, Math.min(0.45, 0.12 + (p.progress ?? 0) * 0.35));
               if (aliveRef.current)
@@ -565,7 +611,8 @@ export default function UploadPage() {
           const { invoiceId } = await persistUploadDraft({
             supabase: sb,
             userId: user.id,
-            file: currentFile,
+            file: prep.originalFile,
+            processedBlob: prep.processedBlob,
             draft: toUploadDraft(merged),
             aiApplied: didAiApply,
             aiConfidence: typeof merged.confidence === "number" ? merged.confidence : null,
@@ -675,10 +722,16 @@ export default function UploadPage() {
         return;
       }
 
+      let prep = preparedRef.current;
+      if (!prep) {
+        prep = await prepareDocumentFiles(file);
+        preparedRef.current = prep;
+      }
       const { invoiceId } = await persistUploadDraft({
         supabase,
         userId: user.id,
-        file,
+        file: prep.originalFile,
+        processedBlob: prep.processedBlob,
         draft: buildDraftFromState(),
         aiApplied,
         aiConfidence,
@@ -755,17 +808,28 @@ export default function UploadPage() {
           <input
             className="mt-1 w-full rounded-xl border px-3 py-2 outline-none focus:ring"
             type="file"
-            accept="image/*,.png,.jpg,.jpeg,.webp,.heic,.heif"
+            accept={DOCUMENT_FILE_ACCEPT}
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />
           <p className="mt-1 text-xs text-zinc-500">{t("upload.fileHint")}</p>
+          {preparingDoc ? <p className="mt-2 text-xs text-zinc-600">{t("doc.preparing")}</p> : null}
+          {scanNote && preparedRef.current ? (
+            <p className="mt-1 text-xs text-emerald-700">{scanNote}</p>
+          ) : null}
+          {preparedRef.current?.previewUrl ? (
+            <img
+              src={preparedRef.current.previewUrl}
+              alt=""
+              className="mt-3 max-h-64 w-full rounded-xl border object-contain"
+            />
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
             onClick={process}
-            disabled={!file || busy || backgroundRunning}
+            disabled={!file || busy || backgroundRunning || preparingDoc}
             className="rounded-xl bg-[var(--app-navy)] px-5 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
             {busy || backgroundRunning ? t("upload.processing") : t("upload.btn")}

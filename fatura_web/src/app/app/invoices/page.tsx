@@ -5,12 +5,13 @@ import { useEffect, useMemo, useState } from "react";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 import { isMissingPaidAtColumnError, postgrestErrorMessage } from "@/lib/supabase/postgrestError";
 import { getSignedDocumentUrl } from "@/lib/upload/documents";
+import { DocumentDownloadButtons } from "@/components/DocumentDownloadButtons";
 import { useI18n } from "@/lib/i18n/LocaleContext";
 
 const INVOICE_LIST_SELECT_WITH_PAID = `
           id,issue_date,invoice_no,currency,subtotal,vat_total,total,notes,created_at,paid_at,
           customer:customers(id,name),
-          document:documents(id,storage_bucket,storage_path,original_filename)
+          document:documents(id,storage_bucket,storage_path,processed_storage_path,original_filename,mime_type)
         `;
 
 const INVOICE_LIST_SELECT_LEGACY = `
@@ -31,7 +32,14 @@ type InvoiceRow = {
   created_at: string;
   paid_at: string | null;
   customer: { id: string; name: string } | null;
-  document: { id: string; storage_bucket: string; storage_path: string; original_filename: string | null } | null;
+  document: {
+    id: string;
+    storage_bucket: string;
+    storage_path: string;
+    processed_storage_path?: string | null;
+    original_filename: string | null;
+    mime_type?: string | null;
+  } | null;
 };
 
 function monthKey(isoDate: string): string {
@@ -320,13 +328,16 @@ export default function InvoicesListPage() {
                       {t("invoices.edit")}
                     </Link>
                     {r.document ? (
-                      <button
-                        className="rounded-lg border border-[var(--app-border)] px-3 py-1 text-xs hover:bg-slate-50"
-                        onClick={() => openDocument(r)}
-                        type="button"
-                      >
-                        {t("invoices.image")}
-                      </button>
+                      <>
+                        <button
+                          className="rounded-lg border border-[var(--app-border)] px-3 py-1 text-xs hover:bg-slate-50"
+                          onClick={() => void openDocument(r)}
+                          type="button"
+                        >
+                          {t("doc.openFile")}
+                        </button>
+                        <DocumentDownloadButtons document={r.document} />
+                      </>
                     ) : (
                       <span className="text-xs text-zinc-400">{t("invoices.noFile")}</span>
                     )}

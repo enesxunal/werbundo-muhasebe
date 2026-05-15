@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 import { runInvoiceOcr } from "@/lib/ocr/runOcr";
+import { DOCUMENT_FILE_ACCEPT } from "@/lib/document/acceptedTypes";
+import { prepareDocumentFiles } from "@/lib/document/prepareDocumentFiles";
 import { uploadDocument } from "@/lib/upload/documents";
 import { prepareInvoiceImageForVision } from "@/lib/vision/prepareInvoiceImageForVision";
 import { useI18n } from "@/lib/i18n/LocaleContext";
@@ -144,7 +146,13 @@ export default function CorrespondenceNewPage() {
       const user = u.user;
       if (!user) throw new Error("Oturum yok.");
 
-      const doc = await uploadDocument({ file, userId: user.id, docType: "correspondence" });
+      const prep = await prepareDocumentFiles(file);
+      const doc = await uploadDocument({
+        file: prep.originalFile,
+        userId: user.id,
+        docType: "correspondence",
+        processedBlob: prep.processedBlob,
+      });
 
       const pid = parentId || null;
       const appendNote = pid ? aiAppendNote : null;
@@ -200,7 +208,7 @@ export default function CorrespondenceNewPage() {
         <label className="text-sm font-medium">{t("correspondence.fileLabel")}</label>
         <input
           type="file"
-          accept="image/jpeg,image/png,image/webp"
+          accept={DOCUMENT_FILE_ACCEPT}
           className="mt-2 block w-full text-sm"
           onChange={(e) => {
             setFile(e.target.files?.[0] ?? null);

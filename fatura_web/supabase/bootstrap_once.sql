@@ -4,6 +4,9 @@
 -- Güvenli: IF NOT EXISTS / mevcut policy kontrolü
 -- =============================================================================
 
+-- İşlenmiş belge görseli (düzleştirilmiş JPG yolu)
+alter table public.documents add column if not exists processed_storage_path text;
+
 -- Müşteri ek kolonları
 alter table public.customers add column if not exists tax_no text;
 alter table public.customers add column if not exists tax_office text;

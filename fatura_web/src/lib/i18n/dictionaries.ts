@@ -191,7 +191,7 @@ export const tr: MessageTree = {
       "Görsel yükleyin; OCR ve (varsa) yapay zekâ ile okuma yapılır ve kayıt oluşturulur. Muhatap sistemde varsa aynı kayda eklenir; yoksa yeni kayıt açılır.",
     fileLabel: "Fatura görseli",
     selectFile: "Lütfen fatura görseli seçin.",
-    fileHint: "En iyi sonuç: net, kırpılmış, iyi ışıklı JPG/PNG.",
+    fileHint: "JPG, PNG, HEIC, PDF ve diğer görseller. Yüklemede belge otomatik düzeltilir (AI yok).",
     btn: "Yükle ve kaydet",
     processing: "İşleniyor…",
     busyOther: "Başka bir fatura işleniyor; bitene kadar bekleyin.",
@@ -441,6 +441,16 @@ export const tr: MessageTree = {
     error: "Hata",
     save: "Kaydet",
     cancel: "İptal",
+  },
+  doc: {
+    downloadJpg: "JPG indir",
+    downloadPdf: "PDF indir",
+    statusLoad: "Dosya okunuyor…",
+    statusScan: "Belge düzeltiliyor…",
+    preparing: "Belge hazırlanıyor…",
+    scanOk: "Belge otomatik düzeltildi (yazılar değiştirilmedi).",
+    scanFallback: "Köşe bulunamadı; hafif iyileştirme uygulandı.",
+    openFile: "Dosyayı aç",
   },
 };
 
@@ -865,6 +875,16 @@ export const de: MessageTree = {
     error: "Fehler",
     save: "Speichern",
     cancel: "Abbrechen",
+  },
+  doc: {
+    downloadJpg: "JPG herunterladen",
+    downloadPdf: "PDF herunterladen",
+    statusLoad: "Datei wird gelesen…",
+    statusScan: "Dokument wird begradigt…",
+    preparing: "Dokument wird vorbereitet…",
+    scanOk: "Dokument automatisch begradigt (Text unverändert).",
+    scanFallback: "Keine Ecken erkannt; leichte Verbesserung angewendet.",
+    openFile: "Datei öffnen",
   },
 };
 
