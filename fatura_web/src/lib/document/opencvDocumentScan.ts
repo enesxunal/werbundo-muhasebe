@@ -1,4 +1,5 @@
 import { ensureOpenCvLoaded } from "@/lib/document/loadOpenCv";
+import { isMeaningfulScanOutput } from "@/lib/document/validateScanResult";
 
 type Point = { x: number; y: number };
 
@@ -38,7 +39,7 @@ function isValidQuad(pts: Point[], imgW: number, imgH: number): boolean {
   const imgArea = imgW * imgH;
   const area = quadAreaPts(pts);
   if (area < imgArea * 0.04) return false;
-  if (area > imgArea * 0.97) return false;
+  if (area > imgArea * 0.85) return false;
   const { w, h } = outputSizeFromPoints(pts);
   if (w < 60 || h < 60) return false;
   const ar = Math.max(w, h) / Math.min(w, h);
@@ -92,7 +93,7 @@ function searchContoursForQuad(
     for (let i = 0; i < contours.size(); i++) {
       const cnt = contours.get(i);
       const area = cv.contourArea(cnt);
-      if (area < detectArea * 0.04 || area > detectArea * 0.97) continue;
+      if (area < detectArea * 0.04 || area > detectArea * 0.85) continue;
       const peri = cv.arcLength(cnt, true);
       const approx = new cv.Mat();
       cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
@@ -131,6 +132,8 @@ function findBestQuad(cv: Cv, gray: Cv, fullW: number, fullH: number, scaleBack:
   const blurred = new cv.Mat();
   cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
 
+  const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+
   for (const [low, high] of [
     [50, 150],
     [30, 120],
@@ -138,9 +141,11 @@ function findBestQuad(cv: Cv, gray: Cv, fullW: number, fullH: number, scaleBack:
   ] as const) {
     const edges = new cv.Mat();
     cv.Canny(blurred, edges, low, high);
+    cv.dilate(edges, edges, kernel);
     pick(searchContoursForQuad(cv, edges, detectW, detectH, fullW, fullH, scaleBack, cv.RETR_LIST));
     edges.delete();
   }
+  kernel.delete();
 
   const thresh = new cv.Mat();
   cv.adaptiveThreshold(blurred, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
@@ -152,6 +157,23 @@ function findBestQuad(cv: Cv, gray: Cv, fullW: number, fullH: number, scaleBack:
   blurred.delete();
 
   return best;
+}
+
+/** Elle ayarlanan veya algılanan köşelerle düzleştir (dışarıdan çağrılabilir) */
+export async function warpDocumentFromPoints(
+  source: HTMLCanvasElement,
+  pts: Point[],
+): Promise<HTMLCanvasElement | null> {
+  try {
+    await ensureOpenCvLoaded();
+    const cv = (typeof window !== "undefined" ? window.cv : null) as Cv | undefined;
+    if (!cv?.imread) return null;
+    const warped = warpDocument(cv, source, pts);
+    if (!warped || warped.width < 32 || warped.height < 32) return null;
+    return warped;
+  } catch {
+    return null;
+  }
 }
 
 function warpDocument(cv: Cv, source: HTMLCanvasElement, pts: Point[]): HTMLCanvasElement | null {
@@ -228,7 +250,7 @@ export async function scanDocumentWithOpenCv(source: HTMLCanvasElement): Promise
 
       if (pts) {
         const warped = warpDocument(cv, source, pts);
-        if (warped && warped.width >= 32 && warped.height >= 32) return warped;
+        if (warped && isMeaningfulScanOutput(source, warped)) return warped;
       }
     }
 

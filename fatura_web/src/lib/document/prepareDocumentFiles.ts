@@ -1,6 +1,7 @@
 import { assertSupportedDocumentFile } from "@/lib/document/acceptedTypes";
 import { canvasToJpegBlob, canvasToJpegFile, fileToSourceCanvas } from "@/lib/document/fileToCanvas";
 import { normalizeCanvasFallback, scanDocumentCanvas } from "@/lib/document/scanDocument";
+import { isMeaningfulScanOutput } from "@/lib/document/validateScanResult";
 
 export type PreparedDocument = {
   /** Kullanıcının seçtiği ham dosya */
@@ -9,9 +10,11 @@ export type PreparedDocument = {
   workFile: File;
   /** Storage'a kaydedilecek işlenmiş görsel */
   processedBlob: Blob;
-  /** jscanify ile köşe düzeltmesi uygulandı mı */
+  /** Gerçek köşe/kırpma düzeltmesi uygulandı mı */
   scanApplied: boolean;
   previewUrl: string;
+  /** Elle köşe ayarı için ham canvas */
+  sourceCanvas: HTMLCanvasElement;
 };
 
 export async function prepareDocumentFiles(
@@ -24,12 +27,9 @@ export async function prepareDocumentFiles(
   const source = await fileToSourceCanvas(file);
   onStatus?.("scan");
 
-  let processed = await scanDocumentCanvas(source);
-  let scanApplied = Boolean(processed);
-  if (!processed) {
-    processed = normalizeCanvasFallback(source);
-    scanApplied = false;
-  }
+  const scanned = await scanDocumentCanvas(source);
+  const scanApplied = Boolean(scanned && isMeaningfulScanOutput(source, scanned));
+  const processed = scanApplied && scanned ? scanned : normalizeCanvasFallback(source);
 
   const processedBlob = await canvasToJpegBlob(processed, 0.92);
   const base = file.name.replace(/\.[^.]+$/, "") || "belge";
@@ -42,6 +42,25 @@ export async function prepareDocumentFiles(
     processedBlob,
     scanApplied,
     previewUrl,
+    sourceCanvas: source,
+  };
+}
+
+/** Elle köşe düzeltmesi sonrası önizlemeyi güncelle */
+export async function applyManualScanResult(
+  prepared: PreparedDocument,
+  resultCanvas: HTMLCanvasElement,
+): Promise<PreparedDocument> {
+  revokePreparedPreview(prepared);
+  const processedBlob = await canvasToJpegBlob(resultCanvas, 0.92);
+  const base = prepared.originalFile.name.replace(/\.[^.]+$/, "") || "belge";
+  const workFile = await canvasToJpegFile(resultCanvas, base, 0.92);
+  return {
+    ...prepared,
+    workFile,
+    processedBlob,
+    scanApplied: true,
+    previewUrl: URL.createObjectURL(processedBlob),
   };
 }
 

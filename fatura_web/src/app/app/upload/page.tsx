@@ -4,7 +4,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 import { runInvoiceOcr } from "@/lib/ocr/runOcr";
-import { prepareDocumentFiles, revokePreparedPreview, type PreparedDocument } from "@/lib/document/prepareDocumentFiles";
+import {
+  applyManualScanResult,
+  prepareDocumentFiles,
+  revokePreparedPreview,
+  type PreparedDocument,
+} from "@/lib/document/prepareDocumentFiles";
+import { DocumentCornerEditor } from "@/components/DocumentCornerEditor";
 import { DOCUMENT_FILE_ACCEPT } from "@/lib/document/acceptedTypes";
 import { prepareInvoiceImageForVision } from "@/lib/vision/prepareInvoiceImageForVision";
 import { appendImportHistory } from "@/lib/invoice/importHistoryStore";
@@ -65,6 +71,8 @@ export default function UploadPage() {
   const preparedRef = useRef<PreparedDocument | null>(null);
   const [preparingDoc, setPreparingDoc] = useState(false);
   const [scanNote, setScanNote] = useState<string | null>(null);
+  const [scanOk, setScanOk] = useState(false);
+  const [manualCornerOpen, setManualCornerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ status: string; progress: number } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -104,6 +112,8 @@ export default function UploadPage() {
       revokePreparedPreview(preparedRef.current);
       preparedRef.current = null;
       setScanNote(null);
+      setScanOk(false);
+      setManualCornerOpen(false);
       return;
     }
     let cancelled = false;
@@ -117,7 +127,9 @@ export default function UploadPage() {
         }
         revokePreparedPreview(preparedRef.current);
         preparedRef.current = prep;
+        setScanOk(prep.scanApplied);
         setScanNote(prep.scanApplied ? t("doc.scanOk") : t("doc.scanFallback"));
+        setManualCornerOpen(false);
       },
       (err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : t("common.error"));
@@ -814,13 +826,37 @@ export default function UploadPage() {
           <p className="mt-1 text-xs text-zinc-500">{t("upload.fileHint")}</p>
           {preparingDoc ? <p className="mt-2 text-xs text-zinc-600">{t("doc.preparing")}</p> : null}
           {scanNote && preparedRef.current ? (
-            <p className="mt-1 text-xs text-emerald-700">{scanNote}</p>
+            <p className={`mt-1 text-xs ${scanOk ? "text-emerald-700" : "text-amber-800"}`}>{scanNote}</p>
           ) : null}
-          {preparedRef.current?.previewUrl ? (
+          {preparedRef.current?.previewUrl && !manualCornerOpen ? (
             <img
               src={preparedRef.current.previewUrl}
               alt=""
               className="mt-3 max-h-64 w-full rounded-xl border object-contain"
+            />
+          ) : null}
+          {preparedRef.current && !preparingDoc && !preparedRef.current.scanApplied && !manualCornerOpen ? (
+            <button
+              type="button"
+              className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950"
+              onClick={() => setManualCornerOpen(true)}
+            >
+              {t("doc.manualBtn")}
+            </button>
+          ) : null}
+          {manualCornerOpen && preparedRef.current ? (
+            <DocumentCornerEditor
+              previewUrl={preparedRef.current.sourceCanvas.toDataURL("image/jpeg", 0.9)}
+              sourceCanvas={preparedRef.current.sourceCanvas}
+              onCancel={() => setManualCornerOpen(false)}
+              onApplied={(canvas) => {
+                void applyManualScanResult(preparedRef.current!, canvas).then((next) => {
+                  preparedRef.current = next;
+                  setScanOk(true);
+                  setScanNote(t("doc.scanOk"));
+                  setManualCornerOpen(false);
+                });
+              }}
             />
           ) : null}
         </div>
