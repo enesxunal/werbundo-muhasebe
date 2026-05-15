@@ -76,8 +76,8 @@ export async function POST(req: Request) {
         const msg =
           extracted.error === "AI_BUSY"
             ? locale === "de"
-              ? "KI vorübergehend überlastet (503). Bitte 1–2 Minuten warten und erneut versuchen."
-              : "Yapay zekâ geçici yoğun (503). 1–2 dakika bekleyip tekrar deneyin."
+              ? "Google Gemini vorübergehend überlastet (503). 1–2 Minuten warten und erneut versuchen."
+              : "Google Gemini geçici yoğun (503). 1–2 dakika bekleyip tekrar deneyin."
             : extracted.error;
         return NextResponse.json({ ok: false, error: msg }, { status: 502 });
       }

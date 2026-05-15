@@ -137,10 +137,10 @@ function resolveProvider(): Provider | null {
   if (forced === "gemini") return "gemini";
   if (forced && forced !== "auto") return null;
 
-  const hasOpenai = Boolean(process.env.OPENAI_API_KEY?.trim());
   const hasGemini = Boolean(process.env.GEMINI_API_KEY?.trim());
-  if (hasOpenai) return "openai";
+  const hasOpenai = Boolean(process.env.OPENAI_API_KEY?.trim());
   if (hasGemini) return "gemini";
+  if (hasOpenai) return "openai";
   return null;
 }
 
