@@ -1,11 +1,17 @@
 declare global {
   interface Window {
-    cv?: {
-      Mat?: unknown;
-      onRuntimeInitialized?: () => void;
-    };
+    cv?: OpenCvJs;
   }
 }
+
+/** OpenCV.js tarayıcı tipi (jscanify ile) */
+export type OpenCvJs = {
+  Mat?: unknown;
+  imread: (image: HTMLCanvasElement | HTMLImageElement) => OpenCvMat;
+  onRuntimeInitialized?: () => void;
+};
+
+export type OpenCvMat = { delete: () => void };
 
 let openCvReady: Promise<void> | null = null;
 
@@ -45,4 +51,8 @@ export function ensureOpenCvLoaded(): Promise<void> {
   }
 
   return openCvReady;
+}
+
+export function getOpenCv(): OpenCvJs | null {
+  return typeof window !== "undefined" ? window.cv ?? null : null;
 }
