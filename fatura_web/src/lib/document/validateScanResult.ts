@@ -1,6 +1,11 @@
-import type { CornerPoints } from "@/lib/document/loadJscanify";
-
 type Point = { x: number; y: number };
+
+type CornerPoints = {
+  topLeftCorner: Point;
+  topRightCorner: Point;
+  bottomLeftCorner: Point;
+  bottomRightCorner: Point;
+};
 
 function dist(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -16,7 +21,6 @@ function quadAreaCorners(c: CornerPoints): number {
   return Math.abs(sum) / 2;
 }
 
-/** Algılanan dörtgen fotoğrafın tamamı mı? (masa/fiş ayrımı yok) */
 export function isFullFrameQuad(c: CornerPoints, imgW: number, imgH: number): boolean {
   const margin = Math.min(imgW, imgH) * 0.04;
   const frameCorners: Point[] = [
@@ -39,31 +43,32 @@ export function isFullFrameQuad(c: CornerPoints, imgW: number, imgH: number): bo
 
   const imgArea = imgW * imgH;
   const area = quadAreaCorners(c);
-  if (area > imgArea * 0.88) {
-    const insetX = imgW * 0.03;
-    const insetY = imgH * 0.03;
-    const allNearEdge = pts.every(
-      (p) => p.x <= insetX || p.x >= imgW - insetX || p.y <= insetY || p.y >= imgH - insetY,
-    );
-    if (allNearEdge || nearFrameCorner >= 2) return true;
-  }
+  if (area > imgArea * 0.88 && nearFrameCorner >= 2) return true;
   return false;
 }
 
-/** Çıktı gerçekten kırpılmış / düzeltilmiş mi? */
+/** Çıktı gerçekten kırpılmış mı? (ince şerit / bozuk warp reddedilir) */
 export function isMeaningfulScanOutput(
-  source: HTMLCanvasElement,
+  source: HTMLCanvasElement | HTMLImageElement,
   result: HTMLCanvasElement,
   corners?: CornerPoints,
 ): boolean {
-  if (result.width < 32 || result.height < 32) return false;
+  const srcW = "naturalWidth" in source ? source.naturalWidth || source.width : source.width;
+  const srcH = "naturalHeight" in source ? source.naturalHeight || source.height : source.height;
 
-  const wRatio = result.width / source.width;
-  const hRatio = result.height / source.height;
+  if (result.width < 80 || result.height < 80) return false;
 
-  if (corners && isFullFrameQuad(corners, source.width, source.height)) return false;
+  const minOut = Math.min(result.width, result.height);
+  const maxOut = Math.max(result.width, result.height);
+  if (minOut / maxOut < 0.12) return false;
 
-  const srcArea = source.width * source.height;
+  if (minOut < Math.min(srcW, srcH) * 0.18) return false;
+
+  const wRatio = result.width / srcW;
+  const hRatio = result.height / srcH;
+  if (corners && isFullFrameQuad(corners, srcW, srcH)) return false;
+
+  const srcArea = srcW * srcH;
   const outArea = result.width * result.height;
 
   if (corners) {
@@ -71,12 +76,12 @@ export function isMeaningfulScanOutput(
     if (quadRatio > 0.85) return false;
   }
 
-  if (wRatio > 0.9 && hRatio > 0.9 && outArea > srcArea * 0.8) return false;
+  if (wRatio > 0.92 && hRatio > 0.92 && outArea > srcArea * 0.82) return false;
 
-  const srcAr = source.width / source.height;
+  const srcAr = srcW / srcH;
   const outAr = result.width / result.height;
   const arChange = Math.abs(srcAr - outAr) / Math.max(srcAr, 0.01);
-  if (arChange < 0.08 && wRatio > 0.85 && hRatio > 0.85) return false;
+  if (arChange < 0.06 && wRatio > 0.88 && hRatio > 0.88) return false;
 
   return true;
 }

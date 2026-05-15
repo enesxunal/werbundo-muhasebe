@@ -1,7 +1,6 @@
 import { ensureOpenCvLoaded } from "@/lib/document/loadOpenCv";
+import { orderQuadPoints, type Point } from "@/lib/document/orderQuadPoints";
 import { isMeaningfulScanOutput } from "@/lib/document/validateScanResult";
-
-type Point = { x: number; y: number };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Cv = any;
@@ -17,13 +16,6 @@ function quadAreaPts(pts: Point[]): number {
     sum += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
   }
   return Math.abs(sum) / 2;
-}
-
-function orderQuadPoints(pts: Point[]): Point[] {
-  const sorted = [...pts].sort((a, b) => a.y - b.y);
-  const top = sorted.slice(0, 2).sort((a, b) => a.x - b.x);
-  const bottom = sorted.slice(2, 4).sort((a, b) => a.x - b.x);
-  return [top[0], top[1], bottom[1], bottom[0]];
 }
 
 function outputSizeFromPoints(pts: Point[]): { w: number; h: number } {
@@ -42,8 +34,7 @@ function isValidQuad(pts: Point[], imgW: number, imgH: number): boolean {
   if (area > imgArea * 0.85) return false;
   const { w, h } = outputSizeFromPoints(pts);
   if (w < 60 || h < 60) return false;
-  const ar = Math.max(w, h) / Math.min(w, h);
-  if (ar > 25) return false;
+  if (Math.min(w, h) / Math.max(w, h) < 0.08) return false;
   return true;
 }
 
@@ -61,12 +52,12 @@ function resizeCanvasForDetect(source: HTMLCanvasElement, maxW: number): { canva
   return { canvas: c, scale };
 }
 
-function matToPointsFromApprox(approx: Cv, scaleBack: number): Point[] {
+function matToPointsFromApprox(approx: Cv, scaleToFull: number): Point[] {
   const pts: Point[] = [];
   for (let i = 0; i < 4; i++) {
     pts.push({
-      x: (approx.data32S[i * 2] ?? 0) / scaleBack,
-      y: (approx.data32S[i * 2 + 1] ?? 0) / scaleBack,
+      x: (approx.data32S[i * 2] ?? 0) * scaleToFull,
+      y: (approx.data32S[i * 2 + 1] ?? 0) * scaleToFull,
     });
   }
   return pts;
@@ -75,18 +66,16 @@ function matToPointsFromApprox(approx: Cv, scaleBack: number): Point[] {
 function searchContoursForQuad(
   cv: Cv,
   edgeMat: Cv,
-  detectW: number,
-  detectH: number,
   fullW: number,
   fullH: number,
-  scaleBack: number,
+  scaleToFull: number,
   mode: number,
 ): Point[] | null {
   const contours = new cv.MatVector();
   const hierarchy = new cv.Mat();
   let best: Point[] | null = null;
   let bestArea = 0;
-  const detectArea = detectW * detectH;
+  const detectArea = (fullW * scaleToFull) * (fullH * scaleToFull);
 
   try {
     cv.findContours(edgeMat, contours, hierarchy, mode, cv.CHAIN_APPROX_SIMPLE);
@@ -98,7 +87,7 @@ function searchContoursForQuad(
       const approx = new cv.Mat();
       cv.approxPolyDP(cnt, approx, 0.02 * peri, true);
       if (approx.rows === 4) {
-        const pts = matToPointsFromApprox(approx, scaleBack);
+        const pts = matToPointsFromApprox(approx, scaleToFull);
         if (isValidQuad(pts, fullW, fullH) && area > bestArea) {
           bestArea = area;
           best = pts;
@@ -114,9 +103,7 @@ function searchContoursForQuad(
   return best;
 }
 
-function findBestQuad(cv: Cv, gray: Cv, fullW: number, fullH: number, scaleBack: number): Point[] | null {
-  const detectW = Math.round(fullW * scaleBack);
-  const detectH = Math.round(fullH * scaleBack);
+function findBestQuad(cv: Cv, gray: Cv, fullW: number, fullH: number, scaleToFull: number): Point[] | null {
   let best: Point[] | null = null;
   let bestArea = 0;
 
@@ -131,18 +118,16 @@ function findBestQuad(cv: Cv, gray: Cv, fullW: number, fullH: number, scaleBack:
 
   const blurred = new cv.Mat();
   cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
-
   const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
 
   for (const [low, high] of [
     [50, 150],
     [30, 120],
-    [75, 200],
   ] as const) {
     const edges = new cv.Mat();
     cv.Canny(blurred, edges, low, high);
     cv.dilate(edges, edges, kernel);
-    pick(searchContoursForQuad(cv, edges, detectW, detectH, fullW, fullH, scaleBack, cv.RETR_LIST));
+    pick(searchContoursForQuad(cv, edges, fullW, fullH, scaleToFull, cv.RETR_LIST));
     edges.delete();
   }
   kernel.delete();
@@ -151,7 +136,7 @@ function findBestQuad(cv: Cv, gray: Cv, fullW: number, fullH: number, scaleBack:
   cv.adaptiveThreshold(blurred, thresh, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
   const edges2 = new cv.Mat();
   cv.Canny(thresh, edges2, 50, 150);
-  pick(searchContoursForQuad(cv, edges2, detectW, detectH, fullW, fullH, scaleBack, cv.RETR_EXTERNAL));
+  pick(searchContoursForQuad(cv, edges2, fullW, fullH, scaleToFull, cv.RETR_EXTERNAL));
   thresh.delete();
   edges2.delete();
   blurred.delete();
@@ -159,18 +144,19 @@ function findBestQuad(cv: Cv, gray: Cv, fullW: number, fullH: number, scaleBack:
   return best;
 }
 
-/** Elle ayarlanan veya algılanan köşelerle düzleştir (dışarıdan çağrılabilir) */
+/** Elle ayarlanan köşeler — opencv-document-scanner crop */
 export async function warpDocumentFromPoints(
   source: HTMLCanvasElement,
   pts: Point[],
 ): Promise<HTMLCanvasElement | null> {
   try {
     await ensureOpenCvLoaded();
-    const cv = (typeof window !== "undefined" ? window.cv : null) as Cv | undefined;
-    if (!cv?.imread) return null;
-    const warped = warpDocument(cv, source, pts);
-    if (!warped || warped.width < 32 || warped.height < 32) return null;
-    return warped;
+    const ordered = orderQuadPoints(pts);
+    const { DocumentScanner } = await import("opencv-document-scanner");
+    const scanner = new DocumentScanner();
+    const cropped = scanner.crop(source, ordered);
+    if (!cropped || cropped.width < 32) return null;
+    return cropped;
   } catch {
     return null;
   }
@@ -216,7 +202,6 @@ function warpDocument(cv: Cv, source: HTMLCanvasElement, pts: Point[]): HTMLCanv
   return out;
 }
 
-/** jscanify olmazsa: Canny + kontur (fiş, ahşap zemin, eğik çekim) */
 export async function scanDocumentWithOpenCv(source: HTMLCanvasElement): Promise<HTMLCanvasElement | null> {
   try {
     await ensureOpenCvLoaded();
@@ -226,11 +211,11 @@ export async function scanDocumentWithOpenCv(source: HTMLCanvasElement): Promise
     const attempts = [
       { maxW: 1400, contrast: 1.25 },
       { maxW: 1000, contrast: 1.4 },
-      { maxW: 1800, contrast: 1.1 },
     ];
 
     for (const { maxW, contrast } of attempts) {
       const { canvas: detectCanvas, scale } = resizeCanvasForDetect(source, maxW);
+      const scaleToFull = scale > 0 ? 1 / scale : 1;
       const prep = document.createElement("canvas");
       prep.width = detectCanvas.width;
       prep.height = detectCanvas.height;
@@ -245,7 +230,7 @@ export async function scanDocumentWithOpenCv(source: HTMLCanvasElement): Promise
       cv.cvtColor(rgba, gray, cv.COLOR_RGBA2GRAY);
       rgba.delete();
 
-      const pts = findBestQuad(cv, gray, source.width, source.height, scale);
+      const pts = findBestQuad(cv, gray, source.width, source.height, scaleToFull);
       gray.delete();
 
       if (pts) {
