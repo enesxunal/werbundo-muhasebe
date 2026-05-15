@@ -97,6 +97,12 @@ export default function DashboardPage() {
   const [dueLetters, setDueLetters] = useState<
     { id: string; days: number; label: string; summary: string | null }[]
   >([]);
+  const [reconcile, setReconcile] = useState<{
+    status: "none" | "completed" | "draft";
+    bank: number;
+    matched: number;
+    missing: number;
+  }>({ status: "none", bank: 0, matched: 0, missing: 0 });
 
   useEffect(() => {
     (async () => {
@@ -325,6 +331,39 @@ export default function DashboardPage() {
     })();
   }, [env.ok, supabase, locale]);
 
+  useEffect(() => {
+    (async () => {
+      if (!env.ok || !supabase) return;
+      try {
+        const { data: u } = await supabase.auth.getUser();
+        if (!u.user) return;
+        const now = new Date();
+        const { data, error } = await supabase
+          .from("month_reconciliations")
+          .select("status, bank_txn_count, matched_count, missing_count")
+          .eq("period_year", now.getFullYear())
+          .eq("period_month", now.getMonth() + 1)
+          .maybeSingle();
+        if (error) {
+          if (String(error.message).includes("month_reconciliations")) return;
+          return;
+        }
+        if (!data) {
+          setReconcile({ status: "none", bank: 0, matched: 0, missing: 0 });
+          return;
+        }
+        setReconcile({
+          status: data.status === "completed" ? "completed" : "draft",
+          bank: Number(data.bank_txn_count) || 0,
+          matched: Number(data.matched_count) || 0,
+          missing: Number(data.missing_count) || 0,
+        });
+      } catch {
+        /* tablo yoksa sessiz */
+      }
+    })();
+  }, [env.ok, supabase]);
+
   const currencyFmt = useMemo(() => {
     try {
       return new Intl.NumberFormat(locale === "de" ? "de-DE" : "tr-TR", {
@@ -343,50 +382,97 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-[var(--app-navy)]">{t("dashboard.title")}</h1>
-      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-zinc-600">
-          {!env.ok
-            ? t("dashboard.envMissing")
-            : loading
-              ? t("dashboard.loading")
-              : email
-                ? `${t("dashboard.loginLine")}: ${email}`
-                : t("dashboard.notSignedIn")}
-        </p>
-        {!env.ok ? null : !loading && !email ? (
-          <a
-            className="inline-flex w-fit items-center justify-center rounded-xl bg-[var(--app-navy)] px-4 py-2 text-sm text-white"
-            href="/login"
-          >
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">{t("dashboard.welcome")}</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--app-navy)]">{t("dashboard.title")}</h1>
+          <p className="mt-1 text-sm text-zinc-600">
+            {!env.ok
+              ? t("dashboard.envMissing")
+              : loading
+                ? t("dashboard.loading")
+                : email
+                  ? email
+                  : t("dashboard.notSignedIn")}
+          </p>
+        </div>
+        {!env.ok || loading || email ? null : (
+          <a className="rounded-xl bg-[var(--app-navy)] px-4 py-2 text-sm text-white" href="/login">
             {t("dashboard.signInBtn")}
           </a>
-        ) : null}
+        )}
       </div>
 
-      <div className="mt-8 grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border border-[var(--app-border)] bg-white p-5">
-          <p className="text-xs text-zinc-500">{t("dashboard.monthTotal")}</p>
-          <p className="mt-2 text-xl font-semibold">{statsLoading ? t("dashboard.loading") : fmtMoney(thisMonthTotal)}</p>
-          <p className="mt-1 text-xs text-zinc-500">
-            {thisMonthCount == null ? "—" : `${thisMonthCount} ${t("dashboard.invoicesCount")}`}
+      <p className="mt-6 text-sm font-medium text-[var(--app-navy)]">{t("dashboard.quickActions")}</p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          { href: "/app/upload", title: t("dashboard.actionUpload"), sub: t("dashboard.actionUploadSub"), icon: "📄" },
+          { href: "/app/reconciliation", title: t("dashboard.actionReconcile"), sub: t("dashboard.actionReconcileSub"), icon: "🏦" },
+          { href: "/app/invoices", title: t("dashboard.actionInvoices"), sub: t("dashboard.actionInvoicesSub"), icon: "📋" },
+          { href: "/app/correspondence", title: t("dashboard.actionLetters"), sub: t("dashboard.actionLettersSub"), icon: "✉️" },
+        ].map((a) => (
+          <Link key={a.href} href={a.href} className="flex gap-3 rounded-2xl border border-[var(--app-border)] bg-white p-4 shadow-sm transition hover:border-[var(--app-navy)]/30 hover:shadow-md">
+            <span className="text-xl">{a.icon}</span>
+            <span>
+              <span className="block text-sm font-semibold text-[var(--app-navy)]">{a.title}</span>
+              <span className="mt-0.5 block text-xs text-zinc-500">{a.sub}</span>
+            </span>
+          </Link>
+        ))}
+      </div>
+
+      <div className="mt-8 grid gap-4 lg:grid-cols-3">
+        <Link
+          href="/app/reconciliation"
+          className={`rounded-2xl border p-5 transition hover:shadow-md ${
+            reconcile.status === "completed"
+              ? "border-emerald-300 bg-emerald-50"
+              : reconcile.status === "draft"
+                ? "border-amber-300 bg-amber-50"
+                : "border-[var(--app-border)] bg-white"
+          }`}
+        >
+          <p className="text-xs font-medium text-zinc-600">{t("dashboard.reconcileCard")}</p>
+          <p className="mt-2 text-lg font-semibold text-[var(--app-navy)]">
+            {reconcile.status === "completed"
+              ? t("dashboard.reconcileDone")
+              : reconcile.status === "draft"
+                ? t("dashboard.reconcileDraft")
+                : t("dashboard.reconcileNone")}
           </p>
-        </div>
-        <div className="rounded-2xl border border-[var(--app-border)] bg-white p-5">
-          <p className="text-xs text-zinc-500">{t("dashboard.monthVat")}</p>
-          <p className="mt-2 text-xl font-semibold">{statsLoading ? t("dashboard.loading") : fmtMoney(thisMonthVat)}</p>
-          <p className="mt-1 text-xs text-zinc-500">{t("dashboard.vatNote")}</p>
-        </div>
-        <div className="rounded-2xl border border-[var(--app-border)] bg-white p-5">
-          <p className="text-xs text-zinc-500">{t("dashboard.topSpend")}</p>
-          <p className="mt-2 text-xl font-semibold">
-            {statsLoading ? t("dashboard.loading") : topCustomers[0] ? topCustomers[0].label : "—"}
-          </p>
-          <p className="mt-1 text-xs text-zinc-500">
-            {statsLoading ? " " : topCustomers[0] ? fmtMoney(topCustomers[0].total) : " "}
-          </p>
+          {reconcile.status !== "none" ? (
+            <p className="mt-2 text-sm text-zinc-700">
+              {t("dashboard.reconcileStats", {
+                bank: String(reconcile.bank),
+                matched: String(reconcile.matched),
+                missing: String(reconcile.missing),
+              })}
+            </p>
+          ) : null}
+          <span className="mt-3 inline-block text-sm font-medium text-[var(--app-navy)] underline">
+            {t("dashboard.reconcileCta")} →
+          </span>
+        </Link>
+        <div className="grid gap-3 sm:grid-cols-3 lg:col-span-2">
+          <div className="rounded-2xl border border-[var(--app-border)] bg-white p-4">
+            <p className="text-xs text-zinc-500">{t("dashboard.monthTotal")}</p>
+            <p className="mt-1 text-lg font-semibold">{statsLoading ? "…" : fmtMoney(thisMonthTotal)}</p>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              {thisMonthCount == null ? "—" : `${thisMonthCount} ${t("dashboard.invoicesCount")}`}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-[var(--app-border)] bg-white p-4">
+            <p className="text-xs text-zinc-500">{t("dashboard.monthVat")}</p>
+            <p className="mt-1 text-lg font-semibold">{statsLoading ? "…" : fmtMoney(thisMonthVat)}</p>
+          </div>
+          <div className="rounded-2xl border border-[var(--app-border)] bg-white p-4">
+            <p className="text-xs text-zinc-500">{t("dashboard.topSpend")}</p>
+            <p className="mt-1 truncate text-lg font-semibold">{statsLoading ? "…" : topCustomers[0]?.label ?? "—"}</p>
+            <p className="mt-0.5 text-xs text-zinc-500">{topCustomers[0] ? fmtMoney(topCustomers[0].total) : ""}</p>
+          </div>
         </div>
       </div>
+
 
       {statsError ? (
         <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
@@ -395,7 +481,7 @@ export default function DashboardPage() {
       ) : null}
 
       <div className="mt-8 rounded-2xl border border-[var(--app-border)] bg-white p-5">
-        <p className="text-sm font-medium text-[var(--app-navy)]">{t("dashboard.remindersTitle")}</p>
+        <p className="text-sm font-medium text-[var(--app-navy)]">{t("dashboard.recentActivity")}</p>
         <p className="mt-1 text-xs text-zinc-500">{t("dashboard.remindersSub")}</p>
         {reminderErr ? (
           <p className="mt-3 text-sm text-amber-800">
