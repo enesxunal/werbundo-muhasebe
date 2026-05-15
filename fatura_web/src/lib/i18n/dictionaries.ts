@@ -449,7 +449,8 @@ export const tr: MessageTree = {
     statusScan: "Belge düzeltiliyor…",
     preparing: "Belge hazırlanıyor…",
     scanOk: "Belge otomatik düzeltildi (yazılar değiştirilmedi).",
-    scanFallback: "Köşe bulunamadı; hafif iyileştirme uygulandı.",
+    scanFallback: "Belge kenarı net bulunamadı; hafif iyileştirme uygulandı. Fişi düz zemine, tüm köşeler görünecek şekilde çekin.",
+    scanOkOpenCv: "Belge kenarları algılandı ve düzleştirildi.",
     openFile: "Dosyayı aç",
   },
 };
@@ -883,7 +884,8 @@ export const de: MessageTree = {
     statusScan: "Dokument wird begradigt…",
     preparing: "Dokument wird vorbereitet…",
     scanOk: "Dokument automatisch begradigt (Text unverändert).",
-    scanFallback: "Keine Ecken erkannt; leichte Verbesserung angewendet.",
+    scanFallback: "Dokumentkante nicht klar erkannt; leichte Verbesserung. Beleg flach und vollständig fotografieren.",
+    scanOkOpenCv: "Dokumentkanten erkannt und begradigt.",
     openFile: "Datei öffnen",
   },
 };

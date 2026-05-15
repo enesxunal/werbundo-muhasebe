@@ -1,5 +1,6 @@
 import { getOpenCv } from "@/lib/document/loadOpenCv";
 import { ensureJscanifyLoaded, type CornerPoints, type JScanifyInstance } from "@/lib/document/loadJscanify";
+import { scanDocumentWithOpenCv } from "@/lib/document/opencvDocumentScan";
 
 function dist(a: { x: number; y: number }, b: { x: number; y: number }): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -33,7 +34,7 @@ function isValidCorners(c: CornerPoints, imgW: number, imgH: number): boolean {
   if (corners.some((p) => !Number.isFinite(p.x) || !Number.isFinite(p.y))) return false;
   const imgArea = imgW * imgH;
   const area = quadArea(c);
-  if (area < imgArea * 0.08) return false;
+  if (area < imgArea * 0.04) return false;
   if (area > imgArea * 0.98) return false;
   const { w, h } = outputSizeFromCorners(c);
   return w >= 80 && h >= 80;
@@ -116,6 +117,9 @@ export async function scanDocumentCanvas(source: HTMLCanvasElement): Promise<HTM
       result = await tryExtractFromCanvas(scanner, highlighted, source);
       if (result) return result;
     }
+
+    const opencvResult = await scanDocumentWithOpenCv(source);
+    if (opencvResult) return opencvResult;
 
     return null;
   } catch {
