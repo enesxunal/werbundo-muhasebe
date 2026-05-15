@@ -21,6 +21,49 @@ function quadAreaCorners(c: CornerPoints): number {
   return Math.abs(sum) / 2;
 }
 
+/** Görüntüde içerik (fiş) gerçekten geniş alana yayılmış mı? İnce şeritleri yakalar. */
+export function hasGoodContentSpread(canvas: HTMLCanvasElement): boolean {
+  const sw = Math.min(240, canvas.width);
+  const sh = Math.min(240, canvas.height);
+  const small = document.createElement("canvas");
+  small.width = sw;
+  small.height = sh;
+  const sctx = small.getContext("2d", { willReadFrequently: true });
+  if (!sctx) return false;
+  sctx.drawImage(canvas, 0, 0, sw, sh);
+  const data = sctx.getImageData(0, 0, sw, sh).data;
+
+  let minX = sw;
+  let maxX = 0;
+  let minY = sh;
+  let maxY = 0;
+  let ink = 0;
+
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      const i = (y * sw + x) * 4;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      if (r < 235 || g < 235 || b < 235) {
+        ink++;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (ink < sw * sh * 0.01) return false;
+
+  const xSpread = (maxX - minX + 1) / sw;
+  const ySpread = (maxY - minY + 1) / sh;
+  if (xSpread < 0.28 || ySpread < 0.28) return false;
+
+  return true;
+}
+
 export function isFullFrameQuad(c: CornerPoints, imgW: number, imgH: number): boolean {
   const margin = Math.min(imgW, imgH) * 0.04;
   const frameCorners: Point[] = [
@@ -47,7 +90,6 @@ export function isFullFrameQuad(c: CornerPoints, imgW: number, imgH: number): bo
   return false;
 }
 
-/** Çıktı gerçekten kırpılmış mı? (ince şerit / bozuk warp reddedilir) */
 export function isMeaningfulScanOutput(
   source: HTMLCanvasElement | HTMLImageElement,
   result: HTMLCanvasElement,
@@ -57,12 +99,12 @@ export function isMeaningfulScanOutput(
   const srcH = "naturalHeight" in source ? source.naturalHeight || source.height : source.height;
 
   if (result.width < 80 || result.height < 80) return false;
+  if (!hasGoodContentSpread(result)) return false;
 
   const minOut = Math.min(result.width, result.height);
   const maxOut = Math.max(result.width, result.height);
   if (minOut / maxOut < 0.12) return false;
-
-  if (minOut < Math.min(srcW, srcH) * 0.18) return false;
+  if (minOut < Math.min(srcW, srcH) * 0.15) return false;
 
   const wRatio = result.width / srcW;
   const hRatio = result.height / srcH;

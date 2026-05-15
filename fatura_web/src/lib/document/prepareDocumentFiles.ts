@@ -1,7 +1,6 @@
 import { assertSupportedDocumentFile } from "@/lib/document/acceptedTypes";
 import { canvasToJpegBlob, canvasToJpegFile, fileToSourceCanvas } from "@/lib/document/fileToCanvas";
-import { normalizeCanvasFallback, scanDocumentCanvas } from "@/lib/document/scanDocument";
-import { isMeaningfulScanOutput } from "@/lib/document/validateScanResult";
+import { hasGoodContentSpread } from "@/lib/document/validateScanResult";
 
 export type PreparedDocument = {
   /** Kullanıcının seçtiği ham dosya */
@@ -10,7 +9,7 @@ export type PreparedDocument = {
   workFile: File;
   /** Storage'a kaydedilecek işlenmiş görsel */
   processedBlob: Blob;
-  /** Gerçek köşe/kırpma düzeltmesi uygulandı mı */
+  /** Köşe düzeltmesi onaylandı mı */
   scanApplied: boolean;
   previewUrl: string;
   /** Elle köşe ayarı için ham canvas */
@@ -25,22 +24,18 @@ export async function prepareDocumentFiles(
   onStatus?.("load");
 
   const source = await fileToSourceCanvas(file);
-  onStatus?.("scan");
+  onStatus?.("ready");
 
-  const scanned = await scanDocumentCanvas(source);
-  const scanApplied = Boolean(scanned && isMeaningfulScanOutput(source, scanned));
-  const processed = scanApplied && scanned ? scanned : normalizeCanvasFallback(source);
-
-  const processedBlob = await canvasToJpegBlob(processed, 0.92);
+  const processedBlob = await canvasToJpegBlob(source, 0.92);
   const base = file.name.replace(/\.[^.]+$/, "") || "belge";
-  const workFile = await canvasToJpegFile(processed, base, 0.92);
+  const workFile = await canvasToJpegFile(source, base, 0.92);
   const previewUrl = URL.createObjectURL(processedBlob);
 
   return {
     originalFile: file,
     workFile,
     processedBlob,
-    scanApplied,
+    scanApplied: false,
     previewUrl,
     sourceCanvas: source,
   };
@@ -55,13 +50,20 @@ export async function applyManualScanResult(
   const processedBlob = await canvasToJpegBlob(resultCanvas, 0.92);
   const base = prepared.originalFile.name.replace(/\.[^.]+$/, "") || "belge";
   const workFile = await canvasToJpegFile(resultCanvas, base, 0.92);
+  const ok = hasGoodContentSpread(resultCanvas);
   return {
     ...prepared,
     workFile,
     processedBlob,
-    scanApplied: true,
+    scanApplied: ok,
     previewUrl: URL.createObjectURL(processedBlob),
   };
+}
+
+/** Köşe ayarı yapmadan orijinali kullan */
+export function acceptOriginalDocument(prepared: PreparedDocument): PreparedDocument {
+  revokePreparedPreview(prepared);
+  return { ...prepared, scanApplied: true };
 }
 
 export function revokePreparedPreview(prepared: PreparedDocument | null) {

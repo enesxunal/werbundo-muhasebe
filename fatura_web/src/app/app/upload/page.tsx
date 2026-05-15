@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 import { runInvoiceOcr } from "@/lib/ocr/runOcr";
 import {
+  acceptOriginalDocument,
   applyManualScanResult,
   prepareDocumentFiles,
   revokePreparedPreview,
@@ -68,11 +69,18 @@ export default function UploadPage() {
   const { t } = useI18n();
 
   const [file, setFile] = useState<File | null>(null);
+  const [prepared, setPrepared] = useState<PreparedDocument | null>(null);
   const preparedRef = useRef<PreparedDocument | null>(null);
   const [preparingDoc, setPreparingDoc] = useState(false);
   const [scanNote, setScanNote] = useState<string | null>(null);
   const [scanOk, setScanOk] = useState(false);
   const [manualCornerOpen, setManualCornerOpen] = useState(false);
+
+  const setPreparedDoc = useCallback((next: PreparedDocument | null) => {
+    revokePreparedPreview(preparedRef.current);
+    preparedRef.current = next;
+    setPrepared(next);
+  }, []);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ status: string; progress: number } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -109,8 +117,7 @@ export default function UploadPage() {
 
   useEffect(() => {
     if (!file) {
-      revokePreparedPreview(preparedRef.current);
-      preparedRef.current = null;
+      setPreparedDoc(null);
       setScanNote(null);
       setScanOk(false);
       setManualCornerOpen(false);
@@ -119,17 +126,17 @@ export default function UploadPage() {
     let cancelled = false;
     setPreparingDoc(true);
     setScanNote(null);
+    setManualCornerOpen(false);
     void prepareDocumentFiles(file).then(
       (prep) => {
         if (cancelled) {
           revokePreparedPreview(prep);
           return;
         }
-        revokePreparedPreview(preparedRef.current);
-        preparedRef.current = prep;
-        setScanOk(prep.scanApplied);
-        setScanNote(prep.scanApplied ? t("doc.scanOk") : t("doc.scanFallback"));
-        setManualCornerOpen(false);
+        setPreparedDoc(prep);
+        setScanOk(false);
+        setScanNote(t("doc.manualOpenHint"));
+        setManualCornerOpen(true);
       },
       (err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : t("common.error"));
@@ -140,7 +147,7 @@ export default function UploadPage() {
     return () => {
       cancelled = true;
     };
-  }, [file, t]);
+  }, [file, setPreparedDoc, t]);
 
   const backgroundRunning =
     useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)?.status === "running";
@@ -446,10 +453,7 @@ export default function UploadPage() {
         let prep = preparedRef.current;
         if (!prep) {
           prep = await prepareDocumentFiles(currentFile);
-          preparedRef.current = prep;
-          if (aliveRef.current) {
-            setScanNote(prep.scanApplied ? t("doc.scanOk") : t("doc.scanFallback"));
-          }
+          if (aliveRef.current) setPreparedDoc(prep);
         }
         const workFile = prep.workFile;
 
@@ -737,7 +741,7 @@ export default function UploadPage() {
       let prep = preparedRef.current;
       if (!prep) {
         prep = await prepareDocumentFiles(file);
-        preparedRef.current = prep;
+        setPreparedDoc(prep);
       }
       const { invoiceId } = await persistUploadDraft({
         supabase,
@@ -825,39 +829,53 @@ export default function UploadPage() {
           />
           <p className="mt-1 text-xs text-zinc-500">{t("upload.fileHint")}</p>
           {preparingDoc ? <p className="mt-2 text-xs text-zinc-600">{t("doc.preparing")}</p> : null}
-          {scanNote && preparedRef.current ? (
+          {scanNote && prepared ? (
             <p className={`mt-1 text-xs ${scanOk ? "text-emerald-700" : "text-amber-800"}`}>{scanNote}</p>
           ) : null}
-          {preparedRef.current?.previewUrl && !manualCornerOpen ? (
+          {prepared?.previewUrl && prepared.scanApplied && !manualCornerOpen ? (
             <img
-              src={preparedRef.current.previewUrl}
+              src={prepared.previewUrl}
               alt=""
               className="mt-3 max-h-64 w-full rounded-xl border object-contain"
             />
           ) : null}
-          {preparedRef.current && !preparingDoc && !preparedRef.current.scanApplied && !manualCornerOpen ? (
+          {prepared && !preparingDoc && !manualCornerOpen ? (
             <button
               type="button"
               className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-950"
               onClick={() => setManualCornerOpen(true)}
             >
-              {t("doc.manualBtn")}
+              {prepared.scanApplied ? t("doc.manualBtnAgain") : t("doc.manualBtn")}
             </button>
           ) : null}
-          {manualCornerOpen && preparedRef.current ? (
+          {manualCornerOpen && prepared && !preparingDoc ? (
             <DocumentCornerEditor
-              previewUrl={preparedRef.current.sourceCanvas.toDataURL("image/jpeg", 0.9)}
-              sourceCanvas={preparedRef.current.sourceCanvas}
-              onCancel={() => setManualCornerOpen(false)}
+              previewUrl={prepared.sourceCanvas.toDataURL("image/jpeg", 0.92)}
+              sourceCanvas={prepared.sourceCanvas}
               onApplied={(canvas) => {
-                void applyManualScanResult(preparedRef.current!, canvas).then((next) => {
-                  preparedRef.current = next;
-                  setScanOk(true);
-                  setScanNote(t("doc.scanOk"));
+                void applyManualScanResult(prepared, canvas).then((next) => {
+                  setPreparedDoc(next);
+                  setScanOk(next.scanApplied);
+                  setScanNote(next.scanApplied ? t("doc.scanOk") : t("doc.manualFailSpread"));
                   setManualCornerOpen(false);
                 });
               }}
             />
+          ) : null}
+          {manualCornerOpen && prepared && !preparingDoc ? (
+            <button
+              type="button"
+              className="mt-2 text-xs text-zinc-600 underline"
+              onClick={() => {
+                const next = acceptOriginalDocument(prepared);
+                setPreparedDoc(next);
+                setScanOk(true);
+                setScanNote(t("doc.useOriginalNote"));
+                setManualCornerOpen(false);
+              }}
+            >
+              {t("doc.useOriginalBtn")}
+            </button>
           ) : null}
         </div>
 
