@@ -10,6 +10,15 @@ export function resolveReconciliationProvider(): Provider | null {
   return null;
 }
 
+/** Mutabakat için: Gemini yoğunsa OpenAI'ya düş */
+export function resolveReconciliationProviderWithFallback(primary: Provider): Provider[] {
+  const hasOpenai = Boolean(process.env.OPENAI_API_KEY?.trim());
+  const hasGemini = Boolean(process.env.GEMINI_API_KEY?.trim());
+  if (primary === "gemini" && hasOpenai) return ["gemini", "openai"];
+  if (primary === "openai" && hasGemini) return ["openai", "gemini"];
+  return [primary];
+}
+
 function unwrapJsonText(raw: string): string {
   const t = raw.trim();
   const fence = /^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i.exec(t);
@@ -19,18 +28,44 @@ function unwrapJsonText(raw: string): string {
 
 type VisionPage = { mimeType: string; base64: string };
 
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
 export async function runAiJson<T>(args: {
   system: string;
   userText: string;
   images?: VisionPage[];
 }): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
-  const provider = resolveReconciliationProvider();
-  if (!provider) return { ok: false, error: "NO_PROVIDER" };
+  const primary = resolveReconciliationProvider();
+  if (!primary) return { ok: false, error: "NO_PROVIDER" };
 
-  if (provider === "openai") {
-    return runOpenAiJson<T>(args);
+  const providers = resolveReconciliationProviderWithFallback(primary);
+  let lastError = "UNKNOWN";
+
+  for (const provider of providers) {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const result =
+        provider === "openai" ? await runOpenAiJson<T>(args) : await runGeminiJson<T>(args);
+
+      if (result.ok) return result;
+
+      lastError = result.error;
+      const statusMatch = /(OpenAI|Gemini)\s+(\d+)/.exec(result.error);
+      const status = statusMatch ? Number(statusMatch[2]) : 0;
+
+      if (!isRetryableStatus(status) && attempt > 0) break;
+      if (attempt < 3) {
+        await sleep(800 * (attempt + 1) + (provider === "gemini" ? 400 : 0));
+      }
+    }
   }
-  return runGeminiJson<T>(args);
+
+  return { ok: false, error: lastError };
 }
 
 async function runOpenAiJson<T>(args: {
@@ -50,7 +85,7 @@ async function runOpenAiJson<T>(args: {
   for (const img of args.images ?? []) {
     userContent.push({
       type: "image_url",
-      image_url: { url: `data:${img.mimeType};base64,${img.base64}`, detail: "high" },
+      image_url: { url: `data:${img.mimeType};base64,${img.base64}`, detail: "low" },
     });
   }
   userContent.push({ type: "text", text: args.userText });
@@ -90,7 +125,7 @@ async function runGeminiJson<T>(args: {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) return { ok: false, error: "GEMINI_API_KEY" };
 
-  const model = (process.env.GEMINI_MODEL ?? "gemini-2.5-flash").trim();
+  const model = (process.env.GEMINI_MODEL ?? "gemini-2.0-flash").trim();
   const parts: Array<{ text?: string; inline_data?: { mime_type: string; data: string } }> = [];
   for (const img of args.images ?? []) {
     parts.push({ inline_data: { mime_type: img.mimeType, data: img.base64 } });

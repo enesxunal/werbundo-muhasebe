@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSupabaseUserFromRequest } from "@/lib/supabase/authFromRequest";
-import { extractBankTransactionsFromPages } from "@/lib/reconciliation/extractBankStatement";
+import {
+  dedupeBankTransactions,
+  extractBankTransactionsFromPages,
+} from "@/lib/reconciliation/extractBankStatement";
 import { fetchInvoicesForMatching } from "@/lib/reconciliation/fetchInvoicesForMatching";
 import { matchTransactionsToInvoices } from "@/lib/reconciliation/matchTransactions";
 import type { ReconciliationResult } from "@/lib/reconciliation/types";
@@ -14,11 +17,20 @@ const pageSchema = z.object({
   base64: z.string().max(2_500_000),
 });
 
+const txnSchema = z.object({
+  date: z.string().nullable().optional(),
+  amount: z.number(),
+  currency: z.string(),
+  counterparty: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+});
+
 const bodySchema = z.object({
   locale: z.enum(["tr", "de"]).optional().default("tr"),
   periodYear: z.number().int().min(2020).max(2100),
   periodMonth: z.number().int().min(1).max(12),
-  pages: z.array(pageSchema).min(1).max(12),
+  pages: z.array(pageSchema).max(12).optional(),
+  transactions: z.array(txnSchema).optional(),
   documentId: z.string().uuid().optional(),
 });
 
@@ -37,18 +49,40 @@ export async function POST(req: Request) {
     }
 
     const { supabase, user } = auth;
-    const { periodYear, periodMonth, pages, documentId, locale } = parsed.data;
+    const { periodYear, periodMonth, pages, documentId, locale, transactions: prefetched } = parsed.data;
     const periodLabel = `${periodYear}-${String(periodMonth).padStart(2, "0")}`;
 
-    const extracted = await extractBankTransactionsFromPages(
-      pages.map((p) => ({ mimeType: p.mimeType, base64: p.base64.replace(/\s/g, "") })),
-      periodLabel,
-    );
-    if (!extracted.ok) {
-      return NextResponse.json({ ok: false, error: extracted.error }, { status: 502 });
-    }
+    let transactions = prefetched
+      ? dedupeBankTransactions(
+          prefetched.map((t) => ({
+            date: t.date ?? null,
+            amount: t.amount,
+            currency: t.currency,
+            counterparty: t.counterparty ?? null,
+            description: t.description ?? null,
+          })),
+        )
+      : [];
 
-    const transactions = extracted.transactions;
+    if (!transactions.length) {
+      if (!pages?.length) {
+        return NextResponse.json({ ok: false, error: "INVALID_BODY" }, { status: 400 });
+      }
+      const extracted = await extractBankTransactionsFromPages(
+        pages.map((p) => ({ mimeType: p.mimeType, base64: p.base64.replace(/\s/g, "") })),
+        periodLabel,
+      );
+      if (!extracted.ok) {
+        const msg =
+          extracted.error === "AI_BUSY"
+            ? locale === "de"
+              ? "KI vorübergehend überlastet (503). Bitte 1–2 Minuten warten und erneut versuchen."
+              : "Yapay zekâ geçici yoğun (503). 1–2 dakika bekleyip tekrar deneyin."
+            : extracted.error;
+        return NextResponse.json({ ok: false, error: msg }, { status: 502 });
+      }
+      transactions = extracted.transactions;
+    }
     if (!transactions.length) {
       return NextResponse.json(
         { ok: false, error: locale === "de" ? "Keine Ausgaben im Kontoauszug gefunden." : "Hesap özetinde çıkış bulunamadı." },

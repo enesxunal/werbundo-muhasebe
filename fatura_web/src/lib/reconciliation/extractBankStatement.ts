@@ -19,8 +19,16 @@ const SYSTEM = [
   "Skip: balance lines, headers, footers, interest summaries.",
   "For each outgoing payment return: date (ISO YYYY-MM-DD), amount as POSITIVE number, currency (EUR default), counterparty (Empfänger / name), description (Verwendungszweck).",
   "German amounts: 1.234,56 means 1234.56.",
+  "When multiple statement pages are provided, extract from ALL pages in order.",
   "Return ONLY valid JSON, no markdown.",
 ].join("\n");
+
+/** Her API çağrısında en fazla kaç sayfa (503 / kota için) */
+const PAGES_PER_AI_CALL = 2;
+
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
 function normalizeTxn(raw: NonNullable<ExtractResponse["transactions"]>[number]): ExtractedBankTxn | null {
   const amount = typeof raw.amount === "number" ? Math.abs(raw.amount) : NaN;
@@ -42,7 +50,7 @@ function normalizeTxn(raw: NonNullable<ExtractResponse["transactions"]>[number])
   };
 }
 
-function dedupeTxns(txns: ExtractedBankTxn[]): ExtractedBankTxn[] {
+export function dedupeBankTransactions(txns: ExtractedBankTxn[]): ExtractedBankTxn[] {
   const seen = new Set<string>();
   const out: ExtractedBankTxn[] = [];
   for (const t of txns) {
@@ -57,24 +65,44 @@ function dedupeTxns(txns: ExtractedBankTxn[]): ExtractedBankTxn[] {
 export async function extractBankTransactionsFromPages(
   pages: Array<{ mimeType: string; base64: string }>,
   periodLabel: string,
+  onProgress?: (done: number, total: number) => void,
 ): Promise<{ ok: true; transactions: ExtractedBankTxn[] } | { ok: false; error: string }> {
   const all: ExtractedBankTxn[] = [];
+  const totalBatches = Math.ceil(pages.length / PAGES_PER_AI_CALL);
 
-  for (let i = 0; i < pages.length; i++) {
+  for (let b = 0; b < totalBatches; b++) {
+    const start = b * PAGES_PER_AI_CALL;
+    const batch = pages.slice(start, start + PAGES_PER_AI_CALL);
+    onProgress?.(b + 1, totalBatches);
+
+    const pageNums = batch.map((_, j) => start + j + 1).join(", ");
     const result = await runAiJson<ExtractResponse>({
       system: SYSTEM,
-      images: [pages[i]],
+      images: batch.map((p) => ({ mimeType: p.mimeType, base64: p.base64 })),
       userText: [
-        `Page ${i + 1} of ${pages.length}. Statement period context: ${periodLabel}.`,
-        "Return JSON: { \"transactions\": [ { \"date\", \"amount\", \"currency\", \"counterparty\", \"description\", \"direction\": \"out\" } ] }",
+        `Kontoauszug pages ${pageNums} of ${pages.length}. Period: ${periodLabel}.`,
+        "Extract all outgoing payments visible on these page(s).",
+        'Return JSON: { "transactions": [ { "date", "amount", "currency", "counterparty", "description", "direction": "out" } ] }',
       ].join("\n"),
     });
-    if (!result.ok) return result;
+
+    if (!result.ok) {
+      const friendly =
+        result.error.includes("503") || result.error.includes("429")
+          ? "AI_BUSY"
+          : result.error;
+      return { ok: false, error: friendly };
+    }
+
     for (const raw of result.data.transactions ?? []) {
       const n = normalizeTxn(raw);
       if (n) all.push(n);
     }
+
+    if (b + 1 < totalBatches) {
+      await sleep(1500);
+    }
   }
 
-  return { ok: true, transactions: dedupeTxns(all) };
+  return { ok: true, transactions: dedupeBankTransactions(all) };
 }

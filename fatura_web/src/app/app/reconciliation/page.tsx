@@ -5,7 +5,8 @@ import Link from "next/link";
 import { createSupabaseBrowserClientSafe } from "@/lib/supabase/client";
 import { uploadDocument } from "@/lib/upload/documents";
 import { pdfPagesToImages } from "@/lib/reconciliation/pdfPagesToImages";
-import type { ReconciliationResult } from "@/lib/reconciliation/types";
+import { dedupeBankTransactions } from "@/lib/reconciliation/extractBankStatement";
+import type { ExtractedBankTxn, ReconciliationResult } from "@/lib/reconciliation/types";
 import { useI18n } from "@/lib/i18n/LocaleContext";
 
 const MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
@@ -22,6 +23,9 @@ export default function ReconciliationPage() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ReconciliationResult | null>(null);
   const [loadingSaved, setLoadingSaved] = useState(false);
+  const [progressNote, setProgressNote] = useState<string | null>(null);
+
+  const PAGES_PER_REQUEST = 2;
 
   const years = useMemo(() => {
     const y = now.getFullYear();
@@ -120,6 +124,7 @@ export default function ReconciliationPage() {
     }
     setBusy(true);
     setError(null);
+    setProgressNote(t("reconciliation.progressPdf"));
     try {
       const { data: userData, error: userErr } = await supabase.auth.getUser();
       if (userErr || !userData.user) throw new Error(t("assistant.needLogin"));
@@ -133,15 +138,56 @@ export default function ReconciliationPage() {
         docType: "bank_statement",
       });
 
+      const headers = await authHeaders();
+      let allTxns: ExtractedBankTxn[] = [];
+
+      for (let i = 0; i < pages.length; i += PAGES_PER_REQUEST) {
+        const chunk = pages.slice(i, i + PAGES_PER_REQUEST);
+        setProgressNote(
+          t("reconciliation.progressPages", {
+            from: String(i + 1),
+            to: String(Math.min(i + PAGES_PER_REQUEST, pages.length)),
+            total: String(pages.length),
+          }),
+        );
+
+        const extractRes = await fetch("/api/reconciliation/extract-chunk", {
+          method: "POST",
+          headers,
+          credentials: "same-origin",
+          body: JSON.stringify({
+            locale,
+            periodYear: year,
+            periodMonth: month,
+            pages: chunk,
+            pageOffset: i,
+            totalPages: pages.length,
+          }),
+        });
+
+        const extractJson = (await extractRes.json()) as {
+          ok?: boolean;
+          transactions?: ExtractedBankTxn[];
+          error?: string;
+        };
+        if (!extractRes.ok || !extractJson.ok || !extractJson.transactions) {
+          throw new Error(extractJson.error ?? t("reconciliation.analyzeFail"));
+        }
+        allTxns = allTxns.concat(extractJson.transactions);
+      }
+
+      allTxns = dedupeBankTransactions(allTxns);
+      setProgressNote(t("reconciliation.progressMatch"));
+
       const res = await fetch("/api/reconciliation/analyze", {
         method: "POST",
-        headers: await authHeaders(),
+        headers,
         credentials: "same-origin",
         body: JSON.stringify({
           locale,
           periodYear: year,
           periodMonth: month,
-          pages,
+          transactions: allTxns,
           documentId: doc.id,
         }),
       });
@@ -242,6 +288,7 @@ export default function ReconciliationPage() {
           {busy ? t("reconciliation.analyzing") : t("reconciliation.analyzeBtn")}
         </button>
 
+        {progressNote ? <p className="text-sm text-zinc-600">{progressNote}</p> : null}
         {loadingSaved ? <p className="text-xs text-zinc-500">{t("common.loading")}</p> : null}
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
       </div>
